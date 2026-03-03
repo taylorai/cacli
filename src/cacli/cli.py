@@ -45,7 +45,7 @@ def _normalize_argv(argv: list[str]) -> list[str]:
     if not argv:
         return argv
     first = argv[0]
-    known = {"run", "spawn", "status"}
+    known = {"run", "spawn", "status", "dashboard"}
     if first in known or first in ("-h", "--help", "help") or first.startswith("-"):
         return argv
     return ["run", *argv]
@@ -146,6 +146,13 @@ def _status_command(_args) -> None:
     status_tui()
 
 
+def _dashboard_command(args) -> None:
+    """Handle 'cacli dashboard' — web dashboard."""
+    from cacli.server import run_server
+
+    run_server(port=args.port)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="cacli",
@@ -176,7 +183,15 @@ def main() -> None:
     )
 
     # cacli status
-    subparsers.add_parser("status", help="Show spawned agent dashboard")
+    subparsers.add_parser("status", help="Show spawned agent dashboard (TUI)")
+
+    # cacli dashboard
+    dashboard_parser = subparsers.add_parser(
+        "dashboard", help="Start web dashboard on localhost"
+    )
+    dashboard_parser.add_argument(
+        "--port", type=int, default=8420, help="Port to serve on (default: 8420)"
+    )
 
     args = parser.parse_args(_normalize_argv(sys.argv[1:]))
 
@@ -189,6 +204,8 @@ def main() -> None:
         _spawn_command(args)
     elif args.command == "status":
         _status_command(args)
+    elif args.command == "dashboard":
+        _dashboard_command(args)
 
 
 if __name__ == "__main__":

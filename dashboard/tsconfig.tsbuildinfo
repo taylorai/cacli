@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/vite-env.d.ts","./src/components/conversationview.tsx","./src/components/sessiondetail.tsx","./src/components/sessionlist.tsx","./src/lib/parsers.ts","./src/lib/types.ts"],"version":"5.9.3"}
