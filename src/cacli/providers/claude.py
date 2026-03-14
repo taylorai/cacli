@@ -26,7 +26,7 @@ class ClaudeProvider(BaseProvider):
             cmd += f" --model {shlex.quote(model)}"
         if reasoning_effort is not None:
             # Normalize unified effort levels to Claude Code values
-            effort_map = {"max": "high", "xhigh": "high"}
+            effort_map = {"xhigh": "max"}
             effort = effort_map.get(reasoning_effort, reasoning_effort)
             cmd += f" --effort {shlex.quote(effort)}"
         if settings:

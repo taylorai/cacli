@@ -62,7 +62,13 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         help="Agent provider (default: claude)",
     )
     parser.add_argument("--model", "-m", default=None, help="Model name")
-    parser.add_argument("--reasoning-effort", "-e", default=None)
+    parser.add_argument(
+        "--reasoning-effort",
+        "-e",
+        default=None,
+        choices=["low", "medium", "high", "max", "xhigh"],
+        help="Reasoning effort level",
+    )
     parser.add_argument(
         "--settings",
         "-s",
