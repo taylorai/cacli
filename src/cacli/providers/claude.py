@@ -24,6 +24,11 @@ class ClaudeProvider(BaseProvider):
         cmd = f"claude -p {safe_prompt} --verbose --output-format=stream-json"
         if model:
             cmd += f" --model {shlex.quote(model)}"
+        if reasoning_effort is not None:
+            # Normalize unified effort levels to Claude Code values
+            effort_map = {"max": "high", "xhigh": "high"}
+            effort = effort_map.get(reasoning_effort, reasoning_effort)
+            cmd += f" --effort {shlex.quote(effort)}"
         if settings:
             cmd += f" --settings {shlex.quote(settings)}"
         if not web_search:

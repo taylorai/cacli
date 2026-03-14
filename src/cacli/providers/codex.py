@@ -25,7 +25,10 @@ class CodexProvider(BaseProvider):
         if model:
             cmd += f" --model {shlex.quote(model)}"
         if reasoning_effort is not None:
-            cmd += f" --config model_reasoning_effort={reasoning_effort}"
+            # Normalize unified effort levels to Codex values
+            effort_map = {"max": "xhigh", "auto": "medium"}
+            effort = effort_map.get(reasoning_effort, reasoning_effort)
+            cmd += f" --config model_reasoning_effort={effort}"
         if web_search:
             cmd += " --config features.web_search_request=true"
         return cmd

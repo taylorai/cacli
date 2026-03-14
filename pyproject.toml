@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cacli"
-version = "0.1.0"
+version = "0.1.1"
 description = "Provider-agnostic CLI for running coding agents"
 readme = "README.md"
 license = "MIT"
