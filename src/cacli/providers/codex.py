@@ -6,6 +6,9 @@ import shlex
 from cacli.providers.base import BaseProvider
 from cacli.types import AgentRunResult
 
+DEFAULT_MODEL = "gpt-5.4"
+DEFAULT_REASONING_EFFORT = "high"
+
 
 class CodexProvider(BaseProvider):
     """Provider for Codex/OpenAI CLI."""
@@ -22,13 +25,16 @@ class CodexProvider(BaseProvider):
     ) -> str:
         safe_prompt = shlex.quote(prompt)
         cmd = f"codex exec {safe_prompt} --sandbox danger-full-access --json --skip-git-repo-check"
-        if model:
-            cmd += f" --model {shlex.quote(model)}"
-        if reasoning_effort is not None:
-            # Normalize unified effort levels to Codex values
-            effort_map = {"max": "xhigh"}
-            effort = effort_map.get(reasoning_effort, reasoning_effort)
-            cmd += f" --config model_reasoning_effort={shlex.quote(effort)}"
+        if model is None:
+            model = DEFAULT_MODEL
+        cmd += f" --model {shlex.quote(model)}"
+        if reasoning_effort is None:
+            reasoning_effort = DEFAULT_REASONING_EFFORT
+        # Normalize unified effort levels to Codex values
+        effort_map = {"max": "xhigh"}
+        effort = effort_map.get(reasoning_effort, reasoning_effort)
+        cmd += f" --config model_reasoning_effort={shlex.quote(effort)}"
+
         if web_search:
             cmd += " --config features.web_search_request=true"
         return cmd
