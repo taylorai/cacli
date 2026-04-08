@@ -1,4 +1,5 @@
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -74,6 +75,15 @@ class TranscriptApplyTests(unittest.TestCase):
             patch_text = patch_path.read_text(encoding="utf-8")
             self.assertIn("hello.txt", patch_text)
             self.assertIn("new.txt", patch_text)
+            self.assertNotIn("a/a/", patch_text)
+            self.assertNotIn("b/b/", patch_text)
+            result = subprocess.run(
+                ["git", "apply", "--check", str(patch_path)],
+                cwd=root,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual((root / "hello.txt").read_text(encoding="utf-8"), "hello\n")
 
             apply_actions_to_disk(root, analysis.applicable_actions)
@@ -225,6 +235,148 @@ class TranscriptApplyTests(unittest.TestCase):
             self.assertEqual(len(analysis.applicable_actions), 1)
             apply_actions_to_disk(root, analysis.applicable_actions)
             self.assertEqual((root / "foo.txt").read_text(encoding="utf-8"), "goodbye\n")
+
+    def test_apply_patch_accepts_end_of_file_marker(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "foo.txt").write_text("hello\n", encoding="utf-8")
+            transcript = self._write_transcript(
+                root,
+                "eof-marker.jsonl",
+                [
+                    {
+                        "type": "item.completed",
+                        "item": {
+                            "type": "tool_call",
+                            "name": "apply_patch",
+                            "arguments": {
+                                "patch": (
+                                    "*** Begin Patch\n"
+                                    "*** Update File: foo.txt\n"
+                                    "@@\n"
+                                    "-hello\n"
+                                    "+goodbye\n"
+                                    "*** End of File\n"
+                                    "*** End Patch\n"
+                                )
+                            },
+                        },
+                    }
+                ],
+            )
+
+            analysis = analyze_transcript(
+                str(transcript), cwd=str(root), provider="codex"
+            )
+
+            self.assertEqual(len(analysis.actions), 1)
+            self.assertEqual(len(analysis.applicable_actions), 1)
+            apply_actions_to_disk(root, analysis.applicable_actions)
+            self.assertEqual((root / "foo.txt").read_text(encoding="utf-8"), "goodbye\n")
+
+    def test_patch_hunks_support_no_newline_marker(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "foo.txt").write_text("hello", encoding="utf-8")
+            transcript = self._write_transcript(
+                root,
+                "no-newline.jsonl",
+                [
+                    {
+                        "type": "item.completed",
+                        "item": {
+                            "type": "tool_call",
+                            "name": "apply_patch",
+                            "arguments": {
+                                "patch": (
+                                    "*** Begin Patch\n"
+                                    "*** Update File: foo.txt\n"
+                                    "@@\n"
+                                    "-hello\n"
+                                    "\\ No newline at end of file\n"
+                                    "+goodbye\n"
+                                    "\\ No newline at end of file\n"
+                                    "*** End Patch\n"
+                                )
+                            },
+                        },
+                    }
+                ],
+            )
+
+            analysis = analyze_transcript(
+                str(transcript), cwd=str(root), provider="codex"
+            )
+
+            self.assertEqual(len(analysis.applicable_actions), 1)
+            apply_actions_to_disk(root, analysis.applicable_actions)
+            self.assertEqual((root / "foo.txt").read_text(encoding="utf-8"), "goodbye")
+
+    def test_symlink_path_escape_is_blocked(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as outside_tmp:
+            root = Path(tmp)
+            outside = Path(outside_tmp)
+            (root / "escape").symlink_to(outside, target_is_directory=True)
+            transcript = self._write_transcript(
+                root,
+                "symlink.jsonl",
+                [
+                    {
+                        "type": "assistant",
+                        "message": {
+                            "content": [
+                                {
+                                    "type": "tool_use",
+                                    "name": "Write",
+                                    "input": {
+                                        "file_path": "escape/pwned.txt",
+                                        "content": "owned\n",
+                                    },
+                                }
+                            ]
+                        },
+                    }
+                ],
+            )
+
+            analysis = analyze_transcript(str(transcript), cwd=str(root))
+
+            self.assertEqual(len(analysis.actions), 1)
+            self.assertEqual(len(analysis.applicable_actions), 0)
+            self.assertIn("escapes the target root via symlink", analysis.blocker or "")
+            self.assertFalse((outside / "pwned.txt").exists())
+
+    def test_write_to_directory_is_rejected_during_dry_run(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "nested").mkdir()
+            transcript = self._write_transcript(
+                root,
+                "directory-write.jsonl",
+                [
+                    {
+                        "type": "assistant",
+                        "message": {
+                            "content": [
+                                {
+                                    "type": "tool_use",
+                                    "name": "Write",
+                                    "input": {
+                                        "file_path": "nested",
+                                        "content": "nope\n",
+                                    },
+                                }
+                            ]
+                        },
+                    }
+                ],
+            )
+
+            analysis = analyze_transcript(str(transcript), cwd=str(root))
+
+            self.assertEqual(len(analysis.actions), 1)
+            self.assertEqual(len(analysis.applicable_actions), 0)
+            self.assertIn("is a directory", analysis.blocker or "")
 
     def test_auto_apply_mode_applies_clean_prefix_and_returns_failure_on_blocker(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
