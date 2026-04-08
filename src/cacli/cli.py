@@ -8,6 +8,7 @@ import sys
 
 from cacli.providers import list_providers
 from cacli.runner import build_command, run_agent
+from cacli.transcript_apply import TranscriptApplyError, run_transcript_apply
 from cacli.types import ExecResult
 
 
@@ -45,7 +46,7 @@ def _normalize_argv(argv: list[str]) -> list[str]:
     if not argv:
         return argv
     first = argv[0]
-    known = {"run", "spawn", "status", "dashboard"}
+    known = {"run", "spawn", "status", "dashboard", "apply-transcript"}
     if first in known or first in ("-h", "--help", "help") or first.startswith("-"):
         return argv
     return ["run", *argv]
@@ -159,6 +160,16 @@ def _dashboard_command(args) -> None:
     run_server(port=args.port)
 
 
+def _apply_transcript_command(args) -> None:
+    """Handle 'cacli apply-transcript' — replay edits from a transcript."""
+    try:
+        exit_code = run_transcript_apply(args)
+    except TranscriptApplyError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    sys.exit(exit_code)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="cacli",
@@ -199,6 +210,30 @@ def main() -> None:
         "--port", type=int, default=8420, help="Port to serve on (default: 8420)"
     )
 
+    apply_parser = subparsers.add_parser(
+        "apply-transcript",
+        help="Recover file changes from a Claude Code or Codex transcript",
+    )
+    apply_parser.add_argument("transcript", help="Path to a transcript JSON/JSONL file")
+    apply_parser.add_argument(
+        "--mode",
+        default="generate-patch",
+        choices=["auto-apply", "interactive", "generate-patch"],
+        help="Replay mode (default: generate-patch)",
+    )
+    apply_parser.add_argument(
+        "--provider",
+        default="auto",
+        choices=["auto", "claude", "codex"],
+        help="Transcript provider (default: auto-detect)",
+    )
+    apply_parser.add_argument(
+        "--patch-file",
+        default=None,
+        help="Patch file path for generate-patch mode",
+    )
+    apply_parser.add_argument("--cwd", default=".", help="Working directory")
+
     args = parser.parse_args(_normalize_argv(sys.argv[1:]))
 
     if args.command is None:
@@ -212,6 +247,8 @@ def main() -> None:
         _status_command(args)
     elif args.command == "dashboard":
         _dashboard_command(args)
+    elif args.command == "apply-transcript":
+        _apply_transcript_command(args)
 
 
 if __name__ == "__main__":
