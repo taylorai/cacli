@@ -114,10 +114,50 @@ class VirtualWorkspace:
             raise TranscriptApplyError(f"path {raw_path!r} escapes the target root")
         return normalized
 
+    def _ensure_within_root(self, resolved: Path, raw_path: str) -> None:
+        try:
+            resolved.relative_to(self.root)
+        except ValueError as exc:
+            raise TranscriptApplyError(
+                f"path {raw_path!r} escapes the target root via symlink"
+            ) from exc
+
+    def _resolve_existing_path(self, path: Path, raw_path: str) -> Path:
+        try:
+            resolved = path.resolve(strict=False)
+        except OSError as exc:
+            raise TranscriptApplyError(f"path {raw_path!r} could not be resolved") from exc
+        self._ensure_within_root(resolved, raw_path)
+        return resolved
+
+    def disk_path(self, rel_path: str, *, for_create: bool) -> Path:
+        rel_path = self.normalize_path(rel_path)
+        parts = Path(rel_path).parts
+        current = self.root
+        for part in parts[:-1]:
+            current = current / part
+            if not current.exists() and not current.is_symlink():
+                continue
+            resolved = self._resolve_existing_path(current, rel_path)
+            if not resolved.exists() or not resolved.is_dir():
+                raise TranscriptApplyError(
+                    f"path {rel_path!r} has a non-directory parent component"
+                )
+            current = resolved
+
+        target = current / parts[-1]
+        if target.exists() or target.is_symlink():
+            resolved_target = self._resolve_existing_path(target, rel_path)
+            if resolved_target.exists() and resolved_target.is_dir():
+                raise TranscriptApplyError(f"path {rel_path!r} is a directory")
+        elif for_create:
+            self._ensure_within_root(target.parent.resolve(strict=False), rel_path)
+        return target
+
     def get(self, rel_path: str) -> FileState:
         rel_path = self.normalize_path(rel_path)
         if rel_path not in self._loaded:
-            abs_path = self.root / rel_path
+            abs_path = self.disk_path(rel_path, for_create=False)
             if abs_path.exists():
                 if abs_path.is_dir():
                     raise TranscriptApplyError(f"path {rel_path!r} is a directory")
@@ -134,12 +174,14 @@ class VirtualWorkspace:
 
     def set_file(self, rel_path: str, content: str) -> None:
         rel_path = self.normalize_path(rel_path)
+        self.disk_path(rel_path, for_create=True)
         self._files[rel_path] = FileState(exists=True, content=content)
         self._loaded.add(rel_path)
         self._touched.add(rel_path)
 
     def delete_file(self, rel_path: str) -> None:
         rel_path = self.normalize_path(rel_path)
+        self.disk_path(rel_path, for_create=False)
         self._files[rel_path] = FileState(exists=False, content="")
         self._loaded.add(rel_path)
         self._touched.add(rel_path)
@@ -414,7 +456,9 @@ def _parse_apply_patch_text(
                 move_to = lines[idx][len("*** Move to: ") :].strip()
                 idx += 1
             hunk_lines: list[str] = []
-            while idx < len(lines) and not lines[idx].startswith("*** "):
+            while idx < len(lines):
+                if lines[idx].startswith("*** ") and lines[idx].strip() != "*** End of File":
+                    break
                 hunk_lines.append(lines[idx])
                 idx += 1
             _new_action(
@@ -711,7 +755,16 @@ def _apply_patch_hunks(content: str, hunk_lines: list[str]) -> tuple[str, str | 
     for chunk in chunks:
         before_lines: list[str] = []
         after_lines: list[str] = []
+        previous_prefix: str | None = None
         for line in chunk:
+            if line == "*** End of File":
+                continue
+            if line == r"\ No newline at end of file":
+                if previous_prefix in {" ", "-"} and before_lines:
+                    before_lines[-1] = before_lines[-1].removesuffix("\n")
+                if previous_prefix in {" ", "+"} and after_lines:
+                    after_lines[-1] = after_lines[-1].removesuffix("\n")
+                continue
             if not line:
                 continue
             prefix = line[0]
@@ -720,6 +773,7 @@ def _apply_patch_hunks(content: str, hunk_lines: list[str]) -> tuple[str, str | 
                 before_lines.append(f"{text}\n")
             if prefix in {" ", "+"}:
                 after_lines.append(f"{text}\n")
+            previous_prefix = prefix
         match_idx, error = _find_unique_hunk_match(working, before_lines, search_start)
         if error:
             return content, error
@@ -737,6 +791,9 @@ def dry_run_action(
     try:
         if action.kind == "write":
             path = workspace.normalize_path(str(action.payload["path"]))
+            disk_path = workspace.disk_path(path, for_create=True)
+            if disk_path.exists() and disk_path.is_dir():
+                return False, "path is a directory"
             workspace.set_file(path, str(action.payload["content"]))
             return True, None
 
@@ -930,7 +987,16 @@ def generate_patch(analysis: TranscriptAnalysis, patch_path: str | None = None) 
             _write_state(after_dir, rel_path, analysis.final_files[rel_path])
 
         result = subprocess.run(
-            ["git", "diff", "--no-index", "--", "a", "b"],
+            [
+                "git",
+                "diff",
+                "--no-index",
+                "--src-prefix=a/",
+                "--dst-prefix=b/",
+                "--",
+                "a",
+                "b",
+            ],
             cwd=parent,
             capture_output=True,
             text=True,
@@ -939,8 +1005,11 @@ def generate_patch(analysis: TranscriptAnalysis, patch_path: str | None = None) 
             raise TranscriptApplyError(result.stderr.strip() or "git diff failed")
         patch = result.stdout
         if patch:
-            patch = patch.replace("diff --git a/", "diff --git a/").replace(
-                " b/", " b/"
+            patch = (
+                patch.replace("diff --git a/a/", "diff --git a/")
+                .replace(" b/b/", " b/")
+                .replace("--- a/a/", "--- a/")
+                .replace("+++ b/b/", "+++ b/")
             )
         output.write_text(patch, encoding="utf-8")
     return output
@@ -956,12 +1025,17 @@ def apply_actions_to_disk(root: Path, actions: list[TranscriptAction]) -> None:
 
     for rel_path in workspace.touched_paths():
         state = workspace.snapshot(rel_path)
-        abs_path = root / rel_path
-        if state.exists:
-            abs_path.parent.mkdir(parents=True, exist_ok=True)
-            abs_path.write_text(state.content, encoding="utf-8")
-        elif abs_path.exists():
-            abs_path.unlink()
+        abs_path = workspace.disk_path(rel_path, for_create=state.exists)
+        try:
+            if state.exists:
+                abs_path.parent.mkdir(parents=True, exist_ok=True)
+                abs_path.write_text(state.content, encoding="utf-8")
+            elif abs_path.exists() or abs_path.is_symlink():
+                abs_path.unlink()
+        except OSError as exc:
+            raise TranscriptApplyError(
+                f"failed to apply {rel_path}: {exc.strerror or exc}"
+            ) from exc
 
 
 def _action_diff(root: Path, action: TranscriptAction) -> str:
