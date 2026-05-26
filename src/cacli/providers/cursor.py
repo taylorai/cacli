@@ -10,6 +10,8 @@ CURSOR_DEFAULT_MODEL = "composer-2"
 
 CURSOR_ALLOWED_MODELS = {
     "auto",  # - Auto  (current)
+    "composer-2.5-fast",  # - Composer 2.5 Fast (default)
+    "composer-2.5",  # - Composer 2.5
     "composer-2-fast",  #  - Composer 2 Fast
     "composer-2",  # - Composer 2
     "composer-1.5",  # - Composer 1.5
