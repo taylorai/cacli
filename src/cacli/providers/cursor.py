@@ -6,59 +6,7 @@ import shlex
 from cacli.providers.base import BaseProvider
 from cacli.types import AgentRunResult
 
-CURSOR_DEFAULT_MODEL = "composer-2"
-
-CURSOR_ALLOWED_MODELS = {
-    "auto",  # - Auto  (current)
-    "composer-2.5-fast",  # - Composer 2.5 Fast (default)
-    "composer-2.5",  # - Composer 2.5
-    "composer-2-fast",  #  - Composer 2 Fast
-    "composer-2",  # - Composer 2
-    "composer-1.5",  # - Composer 1.5
-    "gpt-5.3-codex-low",  # - GPT-5.3 Codex Low
-    "gpt-5.3-codex-low-fast",  # - GPT-5.3 Codex Low Fast
-    "gpt-5.3-codex",  # - GPT-5.3 Codex
-    "gpt-5.3-codex-fast",  # - GPT-5.3 Codex Fast
-    "gpt-5.3-codex-high",  # - GPT-5.3 Codex High
-    "gpt-5.3-codex-high-fast",  # - GPT-5.3 Codex High Fast
-    "gpt-5.3-codex-xhigh",  # - GPT-5.3 Codex Extra High
-    "gpt-5.3-codex-xhigh-fast",  # - GPT-5.3 Codex Extra High Fast
-    "gpt-5.2",  # - GPT-5.2
-    "gpt-5.3-codex-spark-preview",  # - GPT-5.3 Codex Spark
-    "gpt-5.2-codex-low",  # - GPT-5.2 Codex Low
-    "gpt-5.2-codex-low-fast",  # - GPT-5.2 Codex Low Fast
-    "gpt-5.2-codex",  # - GPT-5.2 Codex
-    "gpt-5.2-codex-fast",  # - GPT-5.2 Codex Fast
-    "gpt-5.2-codex-high",  # - GPT-5.2 Codex High
-    "gpt-5.2-codex-high-fast",  # - GPT-5.2 Codex High Fast
-    "gpt-5.2-codex-xhigh",  # - GPT-5.2 Codex Extra High
-    "gpt-5.2-codex-xhigh-fast",  # - GPT-5.2 Codex Extra High Fast
-    "gpt-5.1-codex-max-high",  # - GPT-5.1 Codex Max High
-    "gpt-5.4-high",  # - GPT-5.4 High
-    "gpt-5.4-high-fast",  # - GPT-5.4 High Fast
-    "gpt-5.4-xhigh-fast",  # - GPT-5.4 Extra High Fast
-    "opus-4.6-thinking",  # - Claude 4.6 Opus (Thinking)  (default)
-    "gpt-5.4-low",  # - GPT-5.4 Low
-    "gpt-5.4-medium",  # - GPT-5.4
-    "gpt-5.4-medium-fast",  # - GPT-5.4 Fast
-    "gpt-5.4-xhigh",  # - GPT-5.4 Extra High
-    "sonnet-4.6",  # - Claude 4.6 Sonnet
-    "sonnet-4.6-thinking",  # - Claude 4.6 Sonnet (Thinking)
-    "opus-4.6",  # - Claude 4.6 Opus
-    "opus-4.5",  # - Claude 4.5 Opus
-    "opus-4.5-thinking",  # - Claude 4.5 Opus (Thinking)
-    "gpt-5.2-high",  # - GPT-5.2 High
-    "gemini-3.1-pro",  # - Gemini 3.1 Pro
-    "sonnet-4.5",  # - Claude 4.5 Sonnet
-    "sonnet-4.5-thinking",  # - Claude 4.5 Sonnet (Thinking)
-    "gpt-5.1-low",  # - GPT-5.1 Low
-    "gpt-5.1",  # - GPT-5.1
-    "gpt-5.1-high",  # - GPT-5.1 High
-    "gemini-3-pro",  # - Gemini 3 Pro
-    "gemini-3-flash",  # - Gemini 3 Flash
-    "gpt-5.1-codex-mini",  # - GPT-5.1 Codex Mini
-    "kimi-k2.5",  # - Kimi K2.5
-}
+CURSOR_DEFAULT_MODEL = "composer-2.5"
 
 
 class CursorProvider(BaseProvider):
@@ -69,9 +17,6 @@ class CursorProvider(BaseProvider):
     def resolve_model(self, model: str | None) -> str:
         if not model:
             return CURSOR_DEFAULT_MODEL
-        if model not in CURSOR_ALLOWED_MODELS:
-            allowed = ", ".join(sorted(CURSOR_ALLOWED_MODELS))
-            raise ValueError(f"Unsupported cursor model '{model}'. Allowed: {allowed}")
         return model
 
     def build_command(

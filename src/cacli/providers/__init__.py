@@ -4,6 +4,7 @@ from cacli.providers.base import BaseProvider
 from cacli.providers.claude import ClaudeProvider
 from cacli.providers.codex import CodexProvider
 from cacli.providers.cursor import CursorProvider
+from cacli.providers.devin import DevinProvider
 from cacli.providers.gemini import GeminiProvider
 
 _PROVIDERS: dict[str, BaseProvider] = {}
@@ -15,6 +16,7 @@ def _init_registry() -> None:
     _PROVIDERS["openai"] = CodexProvider()
     _PROVIDERS["gemini"] = GeminiProvider()
     _PROVIDERS["cursor"] = CursorProvider()
+    _PROVIDERS["devin"] = DevinProvider()
 
 
 _init_registry()
