@@ -1,16 +1,55 @@
 """Claude Code provider."""
 
 import json
+import re
 import shlex
 
 from cacli.providers.base import BaseProvider
 from cacli.types import AgentRunResult
 
 
+_CLAUDE_MODEL_ALIASES = {
+    "claude-fable-5": "claude-fable-5",
+    "fable-5": "claude-fable-5",
+    "claude-opus-4.8": "claude-opus-4-8",
+    "opus-4.8": "claude-opus-4-8",
+    "claude-opus-4.7": "claude-opus-4-7",
+    "opus-4.7": "claude-opus-4-7",
+    "claude-opus-4.6": "claude-opus-4-6",
+    "opus-4.6": "claude-opus-4-6",
+    "claude-sonnet-4.6": "claude-sonnet-4-6",
+    "sonnet-4.6": "claude-sonnet-4-6",
+    "claude-haiku-4.5": "claude-haiku-4-5",
+    "haiku-4.5": "claude-haiku-4-5",
+}
+
+_CLAUDE_VERSIONED_MODEL_RE = re.compile(
+    r"^(?:claude-)?(?P<family>fable|opus|sonnet|haiku)-"
+    r"(?P<version>\d+(?:[.-]\d+)*)$"
+)
+
+
+def _normalize_claude_versioned_model(model: str) -> str | None:
+    match = _CLAUDE_VERSIONED_MODEL_RE.match(model)
+    if not match:
+        return None
+    family = match.group("family")
+    version = match.group("version").replace(".", "-")
+    return f"claude-{family}-{version}"
+
+
 class ClaudeProvider(BaseProvider):
     """Provider for the Claude Code CLI."""
 
     name = "claude"
+
+    def resolve_model(self, model: str | None) -> str | None:
+        if not model:
+            return None
+        normalized = model.lower()
+        if normalized in _CLAUDE_MODEL_ALIASES:
+            return _CLAUDE_MODEL_ALIASES[normalized]
+        return _normalize_claude_versioned_model(normalized) or model
 
     def build_command(
         self,
