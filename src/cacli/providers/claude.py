@@ -58,6 +58,7 @@ class ClaudeProvider(BaseProvider):
         reasoning_effort: str | None = None,
         web_search: bool = True,
         settings: str | None = None,
+        sandbox: bool | None = None,
     ) -> str:
         safe_prompt = shlex.quote(prompt)
         cmd = f"claude -p {safe_prompt} --verbose --output-format=stream-json"
@@ -120,6 +121,7 @@ class ClaudeProvider(BaseProvider):
         prompt: str,
         model: str | None = None,
         settings: str | None = None,
+        sandbox: bool | None = None,
     ) -> str:
         safe_prompt = shlex.quote(prompt)
         cmd = f"claude -p {safe_prompt} --verbose --output-format json"

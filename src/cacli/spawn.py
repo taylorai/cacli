@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import time
 
-from cacli.runner import build_command
+from cacli.runner import build_command, build_initial_log_entry
 from cacli.sessions import (
     SessionInfo,
     ensure_sessions_dir,
@@ -42,13 +42,19 @@ def spawn_agent(args) -> None:
         reasoning_effort=getattr(args, "reasoning_effort", None),
         web_search=getattr(args, "web_search", True),
         settings=getattr(args, "settings", None),
+        sandbox=getattr(args, "sandbox", None),
     )
+
+    # Seed the log with the prompt — provider stream output doesn't echo it
+    initial_entry = build_initial_log_entry(args.provider, args.prompt, args.model)
+    with open(log_file, "w") as f:
+        f.write(initial_entry + "\n")
 
     # Wrapper: clean env, run agent with output logging, capture exit code
     # Unset CLAUDECODE so spawned claude agents don't think they're nested
     wrapper = (
         f"unset CLAUDECODE; "
-        f"{{ {agent_cmd}; }} 2>&1 | tee {shlex.quote(log_file)}; "
+        f"{{ {agent_cmd}; }} 2>&1 | tee -a {shlex.quote(log_file)}; "
         f"echo ${{PIPESTATUS[0]}} > {shlex.quote(exitcode_file)}"
     )
 

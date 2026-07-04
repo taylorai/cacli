@@ -46,7 +46,7 @@ def _normalize_argv(argv: list[str]) -> list[str]:
     if not argv:
         return argv
     first = argv[0]
-    known = {"run", "spawn", "status", "dashboard", "apply-transcript"}
+    known = {"run", "spawn", "status", "dashboard", "apply-transcript", "devin-stream"}
     if first in known or first in ("-h", "--help", "help") or first.startswith("-"):
         return argv
     return ["run", *argv]
@@ -82,6 +82,18 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         action="store_false",
         default=True,
     )
+    parser.add_argument(
+        "--sandbox",
+        dest="sandbox",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "OS-level sandbox where the provider supports it. On by default "
+            "for devin (--sandbox; fail-closed on hosts without "
+            "bubblewrap/socat) and codex (workspace-write). --no-sandbox "
+            "restores unsandboxed execution."
+        ),
+    )
     parser.add_argument("--cwd", default=".", help="Working directory")
     parser.add_argument(
         "--timeout", "-t", type=int, default=3600, help="Timeout in seconds"
@@ -98,6 +110,7 @@ def _run_command(args) -> None:
             reasoning_effort=args.reasoning_effort,
             web_search=args.web_search,
             settings=args.settings,
+            sandbox=args.sandbox,
         )
         print(cmd)
         return
@@ -110,6 +123,7 @@ def _run_command(args) -> None:
         reasoning_effort=args.reasoning_effort,
         web_search=args.web_search,
         settings=args.settings,
+        sandbox=args.sandbox,
         cwd=args.cwd,
         timeout=args.timeout,
     )
@@ -158,6 +172,19 @@ def _dashboard_command(args) -> None:
     from cacli.server import run_server
 
     run_server(port=args.port)
+
+
+def _devin_stream_command(args) -> None:
+    """Handle 'cacli devin-stream' — run devin, emit stream-json trajectory."""
+    from cacli.devin_stream import run_devin_stream
+
+    command = args.devin_command
+    if command and command[0] == "--":
+        command = command[1:]
+    if not command:
+        print("Error: missing devin command after --", file=sys.stderr)
+        sys.exit(2)
+    sys.exit(run_devin_stream(command, export_path=args.export_path))
 
 
 def _apply_transcript_command(args) -> None:
@@ -210,6 +237,24 @@ def main() -> None:
         "--port", type=int, default=8420, help="Port to serve on (default: 8420)"
     )
 
+    # cacli devin-stream --export PATH -- devin ...
+    # (internal: used by the devin provider to stream trajectory as JSONL)
+    stream_parser = subparsers.add_parser(
+        "devin-stream",
+        help="Run devin, streaming its trajectory as Claude-style stream-json",
+    )
+    stream_parser.add_argument(
+        "--export",
+        dest="export_path",
+        default=None,
+        help="Path for devin's ATIF export file",
+    )
+    stream_parser.add_argument(
+        "devin_command",
+        nargs=argparse.REMAINDER,
+        help="The devin command to run (prefix with --)",
+    )
+
     apply_parser = subparsers.add_parser(
         "apply-transcript",
         help="Recover file changes from a Claude Code or Codex transcript",
@@ -247,6 +292,8 @@ def main() -> None:
         _status_command(args)
     elif args.command == "dashboard":
         _dashboard_command(args)
+    elif args.command == "devin-stream":
+        _devin_stream_command(args)
     elif args.command == "apply-transcript":
         _apply_transcript_command(args)
 

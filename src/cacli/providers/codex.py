@@ -8,6 +8,23 @@ from cacli.types import AgentRunResult
 
 DEFAULT_MODEL = "gpt-5.4"
 DEFAULT_REASONING_EFFORT = "high"
+# workspace-write confines writes to the workspace at the OS level;
+# --no-sandbox falls back to danger-full-access (the old behavior, for
+# externally-sandboxed environments).
+CODEX_DEFAULT_SANDBOX = True
+
+
+def _sandbox_args(sandbox: bool | None) -> str:
+    if sandbox is None:
+        sandbox = CODEX_DEFAULT_SANDBOX
+    if not sandbox:
+        return "--sandbox danger-full-access"
+    # Codex blocks network inside workspace-write by default; allow it so
+    # sandboxed runs match Devin's sandbox semantics (FS confined, net open).
+    return (
+        "--sandbox workspace-write"
+        " --config sandbox_workspace_write.network_access=true"
+    )
 
 
 class CodexProvider(BaseProvider):
@@ -22,9 +39,13 @@ class CodexProvider(BaseProvider):
         reasoning_effort: str | None = None,
         web_search: bool = True,
         settings: str | None = None,
+        sandbox: bool | None = None,
     ) -> str:
         safe_prompt = shlex.quote(prompt)
-        cmd = f"codex exec {safe_prompt} --sandbox danger-full-access --json --skip-git-repo-check"
+        cmd = (
+            f"codex exec {safe_prompt} {_sandbox_args(sandbox)}"
+            " --json --skip-git-repo-check"
+        )
         if model is None:
             model = DEFAULT_MODEL
         cmd += f" --model {shlex.quote(model)}"
@@ -72,9 +93,13 @@ class CodexProvider(BaseProvider):
         prompt: str,
         model: str | None = None,
         settings: str | None = None,
+        sandbox: bool | None = None,
     ) -> str:
         safe_prompt = shlex.quote(prompt)
-        cmd = f"codex exec {safe_prompt} --sandbox danger-full-access --json --skip-git-repo-check"
+        cmd = (
+            f"codex exec {safe_prompt} {_sandbox_args(sandbox)}"
+            " --json --skip-git-repo-check"
+        )
         if model:
             cmd += f" --model {shlex.quote(model)}"
         return cmd

@@ -13,6 +13,7 @@ def run_agent(
     reasoning_effort: str | None = None,
     web_search: bool = True,
     settings: str | None = None,
+    sandbox: bool | None = None,
     cwd: str = ".",
     timeout: int = 3600,
     env: dict[str, str] | None = None,
@@ -33,6 +34,7 @@ def run_agent(
         reasoning_effort=reasoning_effort,
         web_search=web_search,
         settings=settings,
+        sandbox=sandbox,
     )
 
     exec_result: ExecResult = exec_fn(command, cwd, timeout, env)
@@ -55,6 +57,7 @@ def build_command(
     reasoning_effort: str | None = None,
     web_search: bool = True,
     settings: str | None = None,
+    sandbox: bool | None = None,
 ) -> str:
     """Build the shell command string without executing."""
     prov = get_provider(provider)
@@ -65,6 +68,7 @@ def build_command(
         reasoning_effort=reasoning_effort,
         web_search=web_search,
         settings=settings,
+        sandbox=sandbox,
     )
 
 

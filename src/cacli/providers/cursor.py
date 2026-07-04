@@ -26,6 +26,7 @@ class CursorProvider(BaseProvider):
         reasoning_effort: str | None = None,
         web_search: bool = True,
         settings: str | None = None,
+        sandbox: bool | None = None,
     ) -> str:
         resolved_model = self.resolve_model(model)
         safe_prompt = shlex.quote(prompt)
@@ -70,6 +71,7 @@ class CursorProvider(BaseProvider):
         prompt: str,
         model: str | None = None,
         settings: str | None = None,
+        sandbox: bool | None = None,
     ) -> str:
         resolved_model = self.resolve_model(model)
         safe_prompt = shlex.quote(prompt)

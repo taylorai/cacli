@@ -18,8 +18,13 @@ class BaseProvider(ABC):
         reasoning_effort: str | None = None,
         web_search: bool = True,
         settings: str | None = None,
+        sandbox: bool | None = None,
     ) -> str:
-        """Build the shell command string to invoke this provider."""
+        """Build the shell command string to invoke this provider.
+
+        ``sandbox`` requests OS-level isolation where the provider supports
+        it (currently only Devin). ``None`` means provider default.
+        """
         ...
 
     @abstractmethod
@@ -38,6 +43,7 @@ class BaseProvider(ABC):
         prompt: str,
         model: str | None = None,
         settings: str | None = None,
+        sandbox: bool | None = None,
     ) -> str:
         """Build command for generating PR descriptions."""
         ...
