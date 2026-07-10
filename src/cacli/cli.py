@@ -67,8 +67,10 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         "--reasoning-effort",
         "-e",
         default=None,
-        choices=["low", "medium", "high", "max", "xhigh"],
-        help="Reasoning effort level",
+        help=(
+            "Reasoning effort level (for example: none, minimal, low, medium, "
+            "high, xhigh, max, ultra, or auto); forwarded to the provider"
+        ),
     )
     parser.add_argument(
         "--settings",

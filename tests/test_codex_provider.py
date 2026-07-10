@@ -26,6 +26,23 @@ def test_build_command_keeps_model_and_effort_defaults():
     assert "--config model_reasoning_effort=high" in cmd
 
 
+def test_build_command_forwards_reasoning_effort_verbatim():
+    provider = CodexProvider()
+
+    max_cmd = provider.build_command(
+        "solve it", model="gpt-5.6-sol", reasoning_effort="max"
+    )
+    future_cmd = provider.build_command(
+        "solve it", model="future-model", reasoning_effort="future-effort"
+    )
+
+    assert "--model gpt-5.6-sol" in max_cmd
+    assert "--config model_reasoning_effort=max" in max_cmd
+    assert "model_reasoning_effort=xhigh" not in max_cmd
+    assert "--model future-model" in future_cmd
+    assert "--config model_reasoning_effort=future-effort" in future_cmd
+
+
 def test_pr_description_command_uses_default_sandbox():
     provider = CodexProvider()
     cmd = provider.build_pr_description_command("describe changes")
