@@ -71,6 +71,7 @@ class DevinProvider(BaseProvider):
         web_search: bool = True,
         settings: str | None = None,
         sandbox: bool | None = None,
+        output_schema: dict | None = None,
     ) -> str:
         # Devin's --print mode only writes the final answer to stdout, so the
         # command is wrapped with the devin-stream converter, which tails

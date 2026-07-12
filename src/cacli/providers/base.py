@@ -19,11 +19,14 @@ class BaseProvider(ABC):
         web_search: bool = True,
         settings: str | None = None,
         sandbox: bool | None = None,
+        output_schema: dict | None = None,
     ) -> str:
         """Build the shell command string to invoke this provider.
 
         ``sandbox`` requests OS-level isolation where the provider supports
         it (currently only Devin). ``None`` means provider default.
+        ``output_schema`` is reserved for workflow structured output; Phase 1
+        providers intentionally ignore it.
         """
         ...
 

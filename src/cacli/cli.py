@@ -46,7 +46,15 @@ def _normalize_argv(argv: list[str]) -> list[str]:
     if not argv:
         return argv
     first = argv[0]
-    known = {"run", "spawn", "status", "dashboard", "apply-transcript", "devin-stream"}
+    known = {
+        "run",
+        "spawn",
+        "status",
+        "dashboard",
+        "apply-transcript",
+        "devin-stream",
+        "flow",
+    }
     if first in known or first in ("-h", "--help", "help") or first.startswith("-"):
         return argv
     return ["run", *argv]
@@ -206,6 +214,10 @@ def main() -> None:
     )
     subparsers = parser.add_subparsers(dest="command")
 
+    from cacli.flow.cli import add_flow_parser
+
+    add_flow_parser(subparsers)
+
     # cacli run <prompt>
     run_parser = subparsers.add_parser("run", help="Run agent synchronously")
     _add_common_args(run_parser)
@@ -298,6 +310,10 @@ def main() -> None:
         _devin_stream_command(args)
     elif args.command == "apply-transcript":
         _apply_transcript_command(args)
+    elif args.command == "flow":
+        from cacli.flow.cli import flow_command
+
+        flow_command(args)
 
 
 if __name__ == "__main__":

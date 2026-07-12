@@ -40,6 +40,7 @@ class CodexProvider(BaseProvider):
         web_search: bool = True,
         settings: str | None = None,
         sandbox: bool | None = None,
+        output_schema: dict | None = None,
     ) -> str:
         safe_prompt = shlex.quote(prompt)
         cmd = (

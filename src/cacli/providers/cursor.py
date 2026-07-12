@@ -27,6 +27,7 @@ class CursorProvider(BaseProvider):
         web_search: bool = True,
         settings: str | None = None,
         sandbox: bool | None = None,
+        output_schema: dict | None = None,
     ) -> str:
         resolved_model = self.resolve_model(model)
         safe_prompt = shlex.quote(prompt)
