@@ -5,12 +5,14 @@ import shlex
 import subprocess
 import sys
 import time
+from types import SimpleNamespace
 
 import pytest
 
 from cacli.cli import main as cli_main
 from cacli.flow import FlowCancelled, FlowRunFailed, run_flow
 from cacli.flow.aexec import AsyncExecResult, aexec
+from cacli.flow.host import FlowHost
 from cacli.flow.runs import ResultEncodingError, normalize_json, show_run
 from cacli.flow.sandbox import FlowScriptError, execute, extract_meta
 from cacli.providers import _PROVIDERS
@@ -80,6 +82,13 @@ def test_meta_literal_extraction_does_not_execute():
     assert extract_meta(source) == {"name": "safe", "concurrency": 3}
     with pytest.raises(FlowScriptError, match="literal dict"):
         extract_meta("META = dict(name='unsafe')")
+
+
+def test_worktree_isolation_error_is_user_facing(tmp_path):
+    engine = SimpleNamespace(cancel_event=asyncio.Event())
+    host = FlowHost(engine, cwd=tmp_path, default_provider="fake")
+    with pytest.raises(ValueError, match="^worktree isolation is not supported$"):
+        run(host._ctx_agent("test", isolation="worktree"))
 
 
 class RecordingHost:
@@ -457,3 +466,33 @@ async def main():
     assert "fake:cli" in output
     assert "queued" in output and "done" in output
     assert next((home / ".cacli" / "flows").glob("fl_*/result.json"))
+
+
+def test_cli_flow_install_skill_installs_then_updates(tmp_path, monkeypatch, capsys):
+    argv = ["cacli", "flow", "install-skill", "--dir", str(tmp_path)]
+    monkeypatch.setattr(sys, "argv", argv)
+    cli_main()
+    skill_path = tmp_path / "cacli-flow" / "SKILL.md"
+    assert skill_path.is_file()
+    assert "cacli flow" in skill_path.read_text()
+    assert "installed" in capsys.readouterr().out
+
+    monkeypatch.setattr(sys, "argv", argv)
+    cli_main()
+    assert "updated" in capsys.readouterr().out
+
+
+def test_cli_flow_docs_omits_frontmatter(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["cacli", "flow", "docs"])
+    cli_main()
+    output = capsys.readouterr().out
+    assert output.splitlines()[0] != "---"
+    assert "# cacli flow: cross-provider agent workflows" in output
+
+
+def test_cli_flow_run_help_mentions_flow_args(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["cacli", "flow", "run", "-h"])
+    with pytest.raises(SystemExit) as exc:
+        cli_main()
+    assert exc.value.code == 0
+    assert "flow_args" in capsys.readouterr().out

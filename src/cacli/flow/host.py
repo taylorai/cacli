@@ -154,7 +154,7 @@ class FlowHost:
         if settings is not None and len(settings) > 4096:
             raise ValueError("settings is too long (max 4096 characters)")
         if isolation is not None:
-            raise ValueError("worktree isolation support lands in Phase 4")
+            raise ValueError("worktree isolation is not supported")
         timeout_value = _positive_number("timeout", timeout, 86_400)
         stall_value = _positive_number("stall_timeout", stall_timeout, 86_400)
         if (

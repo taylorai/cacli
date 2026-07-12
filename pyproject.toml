@@ -26,7 +26,7 @@ Repository = "https://github.com/taylorai/cacli"
 where = ["src"]
 
 [tool.setuptools.package-data]
-cacli = ["dashboard_dist/**"]
+cacli = ["dashboard_dist/**", "flow/SKILL.md"]
 
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F", "B"]

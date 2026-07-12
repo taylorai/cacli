@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from importlib import resources
 import json
+from pathlib import Path
 import signal
 import sys
 from typing import Any
@@ -15,21 +17,110 @@ from cacli.providers import list_providers
 
 
 def add_flow_parser(subparsers: Any) -> None:
-    flow = subparsers.add_parser("flow", help="Run and inspect agent workflows")
+    flow = subparsers.add_parser(
+        "flow",
+        help="run sandboxed multi-agent workflows (see 'cacli flow docs')",
+        description=(
+            "Flows are sandboxed Python scripts that orchestrate agent subprocesses "
+            "across providers. Run `cacli flow docs` for the full DSL reference."
+        ),
+    )
     commands = flow.add_subparsers(dest="flow_command")
 
-    run = commands.add_parser("run", help="Run a sandboxed workflow")
-    run.add_argument("script", help="Workflow Python file")
+    run = commands.add_parser(
+        "run",
+        help="run a sandboxed workflow script",
+        description="Run a sandboxed Python workflow that orchestrates agent subprocesses.",
+        epilog=(
+            "Example:\n"
+            "  async def main():\n"
+            '      return await agent("Review the current diff")\n'
+            "  cacli flow run review.py --budget 5.00"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    run.add_argument("script", help="workflow Python file")
     run.add_argument("--args", default=None, help="JSON value exposed as flow_args")
-    run.add_argument("--concurrency", type=int, default=None)
-    run.add_argument("--provider", choices=list_providers(), default=None)
-    run.add_argument("--cwd", default=".")
-    run.add_argument("--budget", type=float, default=None)
-    run.add_argument("--resume", default=None, metavar="RUN_ID")
+    run.add_argument(
+        "--concurrency",
+        type=int,
+        default=None,
+        help="max concurrent agent subprocesses (default: min(16, cpus-2))",
+    )
+    run.add_argument(
+        "--provider",
+        choices=list_providers(),
+        default=None,
+        help="default provider for agent() calls that don't specify one",
+    )
+    run.add_argument(
+        "--cwd", default=".", help="working directory agents run in (default: current)"
+    )
+    run.add_argument(
+        "--budget",
+        type=float,
+        default=None,
+        help=(
+            "dollar cap; run fails with FlowBudgetExceeded when exceeded, "
+            "resumable with a higher cap"
+        ),
+    )
+    run.add_argument(
+        "--resume",
+        default=None,
+        metavar="RUN_ID",
+        help=(
+            "replay cached results from a previous run's journal, going live at "
+            "the first changed call"
+        ),
+    )
 
-    commands.add_parser("runs", help="List past workflow runs")
-    show = commands.add_parser("show", help="Show a workflow run")
-    show.add_argument("run_id")
+    commands.add_parser(
+        "runs", help="list past workflow runs", description="List past workflow runs."
+    )
+    show = commands.add_parser(
+        "show", help="show a workflow run", description="Show one workflow run in JSON."
+    )
+    show.add_argument("run_id", help="run identifier")
+    install = commands.add_parser(
+        "install-skill",
+        help="install the cacli flow skill for agent discovery",
+        description="Install the cacli flow skill for agent discovery.",
+    )
+    install.add_argument(
+        "--dir",
+        default=None,
+        metavar="PATH",
+        help="skill parent directory (default: ~/.claude/skills)",
+    )
+    commands.add_parser(
+        "docs",
+        help="print the full flow DSL reference",
+        description="Print the full flow DSL reference without skill frontmatter.",
+    )
+
+
+def _skill_text() -> str:
+    try:
+        return (
+            resources.files("cacli.flow")
+            .joinpath("SKILL.md")
+            .read_text(encoding="utf-8")
+        )
+    except (FileNotFoundError, OSError, TypeError):
+        return Path(__file__).with_name("SKILL.md").read_text(encoding="utf-8")
+
+
+def _skill_body(text: str) -> str:
+    lines = text.splitlines()
+    if lines and lines[0] == "---":
+        try:
+            end = lines.index("---", 1)
+        except ValueError:
+            pass
+        else:
+            lines = lines[end + 1 :]
+    return "\n".join(lines).lstrip("\n") + "\n"
 
 
 def _progress(event: dict[str, Any]) -> None:
@@ -94,7 +185,22 @@ async def _run(args: argparse.Namespace, flow_args: Any) -> int:
 
 def flow_command(args: argparse.Namespace) -> None:
     if args.flow_command is None:
-        raise SystemExit("cacli flow requires run, runs, or show")
+        raise SystemExit("cacli flow requires run, runs, show, install-skill, or docs")
+    if args.flow_command == "docs":
+        print(_skill_body(_skill_text()), end="")
+        return
+    if args.flow_command == "install-skill":
+        if args.dir is None:
+            destination = Path.home() / ".claude" / "skills" / "cacli-flow"
+        else:
+            destination = Path(args.dir).expanduser() / "cacli-flow"
+        destination.mkdir(parents=True, exist_ok=True)
+        skill_path = destination / "SKILL.md"
+        action = "updated" if skill_path.exists() else "installed"
+        skill_path.write_text(_skill_text(), encoding="utf-8")
+        print(f"Skill {action}: {skill_path}")
+        print("Restart your agent session to pick it up.")
+        return
     if args.flow_command == "run":
         try:
             flow_args = json.loads(args.args) if args.args is not None else None
