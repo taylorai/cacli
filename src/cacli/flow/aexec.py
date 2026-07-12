@@ -14,6 +14,12 @@ from typing import Awaitable, Callable
 OutputCallback = Callable[[str], None | Awaitable[None]]
 ProcessCallback = Callable[[asyncio.subprocess.Process], None]
 
+# Provider final events are emitted at the end, so retain a bounded tail per
+# stream. Truncation is exposed on AsyncExecResult rather than injected into
+# stdout/stderr, which keeps provider parsers able to consume the retained tail.
+MAX_CAPTURE_BYTES = 8 * 1024 * 1024
+READER_DRAIN_TIMEOUT = 3.0
+
 
 @dataclass
 class AsyncExecResult:
@@ -25,6 +31,8 @@ class AsyncExecResult:
     timed_out: bool = False
     stalled: bool = False
     last_output_at: float | None = None
+    stdout_truncated: bool = False
+    stderr_truncated: bool = False
 
 
 def clean_environment(extra: dict[str, str] | None = None) -> dict[str, str]:
@@ -48,20 +56,37 @@ async def _emit(callback: OutputCallback | None, text: str) -> None:
 async def _stop_process(proc: asyncio.subprocess.Process, grace: float = 1.0) -> None:
     if proc.returncode is not None:
         return
+    stopped_at = time.monotonic()
     try:
         os.killpg(proc.pid, signal.SIGTERM)
     except (ProcessLookupError, PermissionError):
         proc.terminate()
     try:
         await asyncio.wait_for(proc.wait(), timeout=grace)
-        return
     except asyncio.TimeoutError:
         pass
+    remaining = grace - (time.monotonic() - stopped_at)
+    if remaining > 0:
+        await asyncio.sleep(remaining)
     try:
         os.killpg(proc.pid, signal.SIGKILL)
     except (ProcessLookupError, PermissionError):
-        proc.kill()
+        if proc.returncode is None:
+            proc.kill()
     await proc.wait()
+
+
+async def _drain_readers(readers: list[asyncio.Task[None]]) -> None:
+    try:
+        await asyncio.wait_for(
+            asyncio.gather(*readers, return_exceptions=True),
+            timeout=READER_DRAIN_TIMEOUT,
+        )
+    except asyncio.TimeoutError:
+        for task in readers:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*readers, return_exceptions=True)
 
 
 async def aexec(
@@ -89,15 +114,17 @@ async def aexec(
     if on_process is not None:
         on_process(proc)
 
-    stdout_chunks: list[str] = []
-    stderr_chunks: list[str] = []
+    stdout_buffer = bytearray()
+    stderr_buffer = bytearray()
+    stdout_truncated = False
+    stderr_truncated = False
     started = time.monotonic()
     last_output_at = started
 
     async def read_stream(
-        stream: asyncio.StreamReader | None, chunks: list[str]
+        stream: asyncio.StreamReader | None, buffer: bytearray, stream_name: str
     ) -> None:
-        nonlocal last_output_at
+        nonlocal last_output_at, stdout_truncated, stderr_truncated
         if stream is None:
             return
         while True:
@@ -105,13 +132,23 @@ async def aexec(
             if not data:
                 break
             text = data.decode(errors="replace")
-            chunks.append(text)
+            overflow = len(buffer) + len(data) - MAX_CAPTURE_BYTES
+            if overflow > 0:
+                if overflow >= len(buffer):
+                    buffer.clear()
+                else:
+                    del buffer[:overflow]
+                if stream_name == "stdout":
+                    stdout_truncated = True
+                else:
+                    stderr_truncated = True
+            buffer.extend(data[-MAX_CAPTURE_BYTES:])
             last_output_at = time.monotonic()
             await _emit(on_output, text)
 
     readers = [
-        asyncio.create_task(read_stream(proc.stdout, stdout_chunks)),
-        asyncio.create_task(read_stream(proc.stderr, stderr_chunks)),
+        asyncio.create_task(read_stream(proc.stdout, stdout_buffer, "stdout")),
+        asyncio.create_task(read_stream(proc.stderr, stderr_buffer, "stderr")),
     ]
     timed_out = False
     stalled = False
@@ -128,10 +165,10 @@ async def aexec(
                 break
             await asyncio.sleep(min(0.1, max(0.01, timeout / 100)))
         await proc.wait()
-        await asyncio.gather(*readers)
+        await _drain_readers(readers)
     except asyncio.CancelledError:
         await _stop_process(proc)
-        await asyncio.gather(*readers, return_exceptions=True)
+        await _drain_readers(readers)
         raise
     finally:
         for task in readers:
@@ -143,11 +180,13 @@ async def aexec(
         exit_code = 124
     return AsyncExecResult(
         exit_code=exit_code,
-        stdout="".join(stdout_chunks),
-        stderr="".join(stderr_chunks),
+        stdout=stdout_buffer.decode(errors="replace"),
+        stderr=stderr_buffer.decode(errors="replace"),
         timed_out=timed_out,
         stalled=stalled,
         last_output_at=last_output_at,
+        stdout_truncated=stdout_truncated,
+        stderr_truncated=stderr_truncated,
     )
 
 

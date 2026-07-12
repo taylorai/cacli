@@ -65,6 +65,8 @@ class FlowEngine:
         self._keys = JournalKeyChain()
         self._index_lock = asyncio.Lock()
         self._processes: set[asyncio.subprocess.Process] = set()
+        self._agent_tasks: set[asyncio.Task[Any]] = set()
+        self._closing = False
         self._cancel_task: asyncio.Task | None = None
 
     def start(self) -> None:
@@ -72,6 +74,17 @@ class FlowEngine:
             self._cancel_task = asyncio.create_task(self._watch_cancel())
 
     async def close(self) -> None:
+        self._closing = True
+        current = asyncio.current_task()
+        pending_agents = [
+            task
+            for task in self._agent_tasks
+            if task is not current and not task.done()
+        ]
+        for task in pending_agents:
+            task.cancel()
+        if pending_agents:
+            await asyncio.gather(*pending_agents, return_exceptions=True)
         if self._cancel_task is not None:
             self._cancel_task.cancel()
             await asyncio.gather(self._cancel_task, return_exceptions=True)
@@ -155,7 +168,25 @@ class FlowEngine:
     def _register_process(self, proc: asyncio.subprocess.Process) -> None:
         self._processes.add(proc)
 
-    async def agent(
+    async def agent(self, prompt: str, **kwargs: Any) -> Any | None:
+        """Run one tracked eager agent call.
+
+        Monty schedules external async functions eagerly, including calls the
+        workflow never awaits. Tracking the hosting task lets shutdown cancel
+        that orphaned work before the run receives a terminal status.
+        """
+        task = asyncio.current_task()
+        if task is None:
+            raise RuntimeError("agent call is not running in an asyncio task")
+        if self._closing:
+            raise asyncio.CancelledError
+        self._agent_tasks.add(task)
+        try:
+            return await self._run_agent(prompt, **kwargs)
+        finally:
+            self._agent_tasks.discard(task)
+
+    async def _run_agent(
         self,
         prompt: str,
         *,
@@ -190,6 +221,14 @@ class FlowEngine:
                 "schema": schema,
                 "cwd": cwd_key,
                 "isolation": isolation,
+                "web_search": web_search,
+                "settings": settings,
+                "sandbox": sandbox,
+                "env": env,
+                "retries": retries,
+                "schema_retries": schema_retries,
+                "timeout": timeout,
+                "stall_timeout": stall_timeout,
             }
         )
         common = {
@@ -260,6 +299,11 @@ class FlowEngine:
             async with self.semaphore:
                 if self.cancel_event.is_set():
                     raise RuntimeError("FlowCancelled: workflow cancelled")
+                if self.budget is not None and self.spent >= self.budget:
+                    raise RuntimeError(
+                        f"FlowBudgetExceeded: spent ${self.spent:.2f} of "
+                        f"${self.budget:.2f} budget"
+                    )
                 schema_attempts = schema_retries + 1 if schema is not None else 1
                 decorated = (
                     decorate_prompt(prompt, schema) if schema is not None else prompt

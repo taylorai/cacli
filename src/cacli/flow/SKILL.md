@@ -189,7 +189,10 @@ Runs live in `~/.cacli/flows/<run_id>/` with per-agent raw logs under
 `--resume <run_id>` replays the longest unchanged prefix of agent calls from
 the previous run's journal (instant, no re-execution — though replayed costs
 still count against the resumed run's budget), then goes live at the first
-call whose identity (prompt/provider/model/effort/schema/cwd) differs.
+call whose identity differs. Identity includes prompt/provider/model/effort/
+schema/cwd plus the execution options `web_search`, `settings`, `sandbox`,
+`env`, `retries`, `schema_retries`, `timeout`, and `stall_timeout`. `label` and
+`phase` are display-only and deliberately excluded from resume identity.
 Resuming with an edited script or different `--args` is the intended
 iteration workflow: fix a later stage, keep earlier results cached. Cached
 terminal failures (`None`) replay as `None`. Budget-exceeded runs resume with

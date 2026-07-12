@@ -229,6 +229,14 @@ def test_schema_changes_key_decoration_does_not_and_resume_replays_dict(tmp_path
             "schema": json.loads(schemas[0]),
             "cwd": None,
             "isolation": None,
+            "web_search": True,
+            "settings": None,
+            "sandbox": None,
+            "env": None,
+            "retries": 0,
+            "schema_retries": 2,
+            "timeout": 3600.0,
+            "stall_timeout": 300.0,
         }
     )
     assert results(outcomes[0])[0]["key"] == expected_key

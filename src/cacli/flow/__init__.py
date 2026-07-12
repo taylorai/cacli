@@ -140,13 +140,18 @@ async def run_flow(
     host = FlowHost(engine, cwd=flow_cwd, default_provider=default_provider)
     engine.start()
     try:
-        result = await execute(
-            source,
-            str(script_path),
-            normalized_args,
-            host,
-            limits=limits,
-        )
+        try:
+            result = await execute(
+                source,
+                str(script_path),
+                normalized_args,
+                host,
+                limits=limits,
+            )
+        finally:
+            # Monty starts external agent calls eagerly. Drain any calls main()
+            # left unawaited before result/status files become terminal.
+            await engine.close()
         normalized = run.write_result(result)
     except FlowScriptError as exc:
         message = str(exc)
@@ -171,8 +176,6 @@ async def run_flow(
     else:
         run.finish("completed")
         return FlowOutcome(run.id, normalized, "completed", run.path)
-    finally:
-        await engine.close()
 
 
 __all__ = [

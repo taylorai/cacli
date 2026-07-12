@@ -158,6 +158,49 @@ async def main():
     assert keys[0] == keys[1]
 
 
+@pytest.mark.parametrize(
+    ("old_option", "new_option"),
+    [
+        ("retries=0", "retries=1"),
+        ("sandbox=False", "sandbox=True"),
+        ("web_search=True", "web_search=False"),
+        ('env={"MODE":"old"}', 'env={"MODE":"new"}'),
+    ],
+)
+def test_execution_options_bust_resume_cache(tmp_path, old_option, new_option):
+    def source(option):
+        return f"""\
+META={{"default_provider":"fake"}}
+async def main():
+    return await agent("same prompt", {option})
+"""
+
+    script = write_flow(tmp_path / "flow.py", source(old_option))
+    original = run(
+        run_flow(
+            script,
+            runs_root=tmp_path / "runs",
+            engine_options={"exec_fn": successful_exec()},
+        )
+    )
+    calls = []
+    script.write_text(source(new_option))
+    resumed = run(
+        run_flow(
+            script,
+            resume=original.run_id,
+            runs_root=tmp_path / "runs",
+            engine_options={"exec_fn": successful_exec(calls=calls)},
+        )
+    )
+
+    old_entry = result_entries(original)[0]
+    new_entry = result_entries(resumed)[0]
+    assert old_entry["key"] != new_entry["key"]
+    assert len(calls) == 1
+    assert new_entry.get("cached") is None
+
+
 def test_relative_cwd_keys_are_checkout_portable(tmp_path):
     source = """
 META={"default_provider":"fake"}
@@ -423,6 +466,31 @@ async def main():
     shown = show_run(caught.value.run_id, tmp_path / "runs")
     assert len([e for e in shown["journal"] if e["type"] == "result"]) == 2
     assert shown["meta"]["totals"]["cost"] == pytest.approx(0.5)
+
+
+def test_queued_parallel_agents_recheck_budget_before_exec(tmp_path):
+    source = """
+META={"default_provider":"fake", "concurrency":1}
+async def main():
+    return await parallel([
+        lambda i=i: agent(str(i), retries=0) for i in range(5)
+    ])
+"""
+    calls = []
+    with pytest.raises(FlowBudgetExceeded) as caught:
+        run(
+            run_flow(
+                write_flow(tmp_path / "flow.py", source),
+                budget=0.20,
+                runs_root=tmp_path / "runs",
+                engine_options={"exec_fn": successful_exec(calls=calls)},
+            )
+        )
+
+    shown = show_run(caught.value.run_id, tmp_path / "runs")
+    assert len(calls) == 1
+    assert shown["meta"]["totals"]["cost"] == pytest.approx(0.25)
+    assert len([e for e in shown["journal"] if e["type"] == "result"]) == 1
 
 
 def test_replayed_cost_counts_toward_budget(tmp_path):

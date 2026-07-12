@@ -201,6 +201,44 @@ async def main():
     assert elapsed < 0.28, f"deferred-await ran sequentially ({elapsed:.2f}s)"
 
 
+def test_unawaited_eager_agents_are_drained_before_completion(tmp_path):
+    source = """
+META = {"default_provider": "fake", "concurrency": 1}
+async def main():
+    agent("orphan-one", retries=0)
+    agent("orphan-two", retries=0)
+    agent("orphan-three", retries=0)
+    return "done"
+"""
+    calls = []
+
+    async def delayed_exec(command, *args, **kwargs):
+        calls.append(command)
+        await asyncio.sleep(0.1)
+        return AsyncExecResult(0, '{"result":"late","cost":0.25}')
+
+    outcome = run(
+        run_flow(
+            write_flow(tmp_path, source),
+            runs_root=tmp_path / "runs",
+            engine_options={"exec_fn": delayed_exec},
+        )
+    )
+    meta_path = outcome.path / "meta.json"
+    journal_path = outcome.path / "journal.jsonl"
+    completed_meta = meta_path.read_text()
+    completed_journal = journal_path.read_text()
+    completed_calls = len(calls)
+    time.sleep(0.2)
+
+    assert outcome.status == "completed"
+    assert outcome.result == "done"
+    assert meta_path.read_text() == completed_meta
+    assert journal_path.read_text() == completed_journal
+    assert len(calls) == completed_calls
+    assert '"type":"result"' not in completed_journal
+
+
 def test_effective_status_detects_dead_pid():
     from cacli.flow.runs import effective_status
 
@@ -288,6 +326,54 @@ def test_aexec_incremental_capture_stall_and_env_hygiene(tmp_path):
     assert captured.last_output_at is not None
     assert stalled.stalled is True
     assert stalled.exit_code == 124
+
+
+def test_aexec_kills_term_ignoring_pipe_holder(tmp_path, monkeypatch):
+    import cacli.flow.aexec as aexec_module
+
+    monkeypatch.setattr(aexec_module, "READER_DRAIN_TIMEOUT", 0.1)
+    process = None
+
+    def record_process(value):
+        nonlocal process
+        process = value
+
+    child = shlex.quote(
+        str(sys.executable)
+        + " -c 'import signal,time; "
+        + "signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(30)'"
+    )
+    started = time.monotonic()
+    result = run(
+        aexec(
+            f"sh -c {child} & wait",
+            str(tmp_path),
+            2,
+            stall_timeout=0.03,
+            on_process=record_process,
+        )
+    )
+    elapsed = time.monotonic() - started
+
+    assert result.stalled is True
+    assert elapsed < 3
+    assert process is not None
+    with pytest.raises(ProcessLookupError):
+        os.killpg(process.pid, 0)
+
+
+def test_aexec_capture_keeps_bounded_tail(tmp_path, monkeypatch):
+    import cacli.flow.aexec as aexec_module
+
+    monkeypatch.setattr(aexec_module, "MAX_CAPTURE_BYTES", 8)
+    large = run(aexec("printf abcdefghijkl", str(tmp_path), 2))
+    small = run(aexec("printf small", str(tmp_path), 2))
+
+    assert large.stdout == "efghijkl"
+    assert len(large.stdout.encode()) <= 8
+    assert large.stdout_truncated is True
+    assert small.stdout == "small"
+    assert small.stdout_truncated is False
 
 
 def test_engine_success_failure_retries_timeout_and_journal(tmp_path):
