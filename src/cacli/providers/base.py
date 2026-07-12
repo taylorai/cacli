@@ -23,12 +23,15 @@ class BaseProvider(ABC):
     ) -> str:
         """Build the shell command string to invoke this provider.
 
-        ``sandbox`` requests OS-level isolation where the provider supports
-        it (currently only Devin). ``None`` means provider default.
-        ``output_schema`` is reserved for workflow structured output; Phase 1
-        providers intentionally ignore it.
+        ``sandbox`` requests OS-level isolation. Providers that cannot honor
+        a non-None value must raise ``NotImplementedError`` rather than ignore it.
+        ``None`` means provider default.
         """
-        ...
+        if sandbox is not None:
+            raise NotImplementedError(
+                f"provider {self.name!r} does not support sandbox configuration"
+            )
+        raise NotImplementedError
 
     @abstractmethod
     def parse_output(self, raw_output: str) -> AgentRunResult:

@@ -48,3 +48,10 @@ def test_pr_description_command_uses_default_sandbox():
     cmd = provider.build_pr_description_command("describe changes")
 
     assert "--sandbox workspace-write" in cmd
+
+
+def test_build_command_forwards_output_schema_path(tmp_path):
+    path = tmp_path / "schema.json"
+    path.write_text('{"type":"object"}')
+    cmd = CodexProvider().build_command("answer", output_schema=path)
+    assert f"--output-schema {path}" in cmd

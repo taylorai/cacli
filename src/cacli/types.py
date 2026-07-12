@@ -1,7 +1,7 @@
 """Core types for the cacli library."""
 
 from dataclasses import dataclass, field
-from typing import Callable
+from typing import Any, Callable
 
 
 @dataclass
@@ -30,3 +30,4 @@ class AgentRunResult:
     provider: str = ""
     model: str | None = None
     command: str = ""
+    structured_output: Any | None = None

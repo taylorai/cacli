@@ -414,14 +414,27 @@ async def main():
     assert "finally ran" in events
 
 
-def test_schema_phase3_validation_error(tmp_path):
+def test_schema_round_trip_returns_mapping_to_sandbox(tmp_path):
     source = """
 META={"default_provider":"fake"}
 async def main():
-    return await agent("x", schema={"type":"object"})
+    r = await agent("x", schema={"type":"object", "required":["findings"]})
+    return r["findings"]
 """
-    with pytest.raises(FlowRunFailed, match="schema support lands in Phase 3"):
-        run(run_flow(write_flow(tmp_path, source), runs_root=tmp_path / "runs"))
+
+    async def structured(*args, **kwargs):
+        return AsyncExecResult(
+            0, json.dumps({"result": 'Here: ```json\\n{"findings":["one"]}\\n```'})
+        )
+
+    outcome = run(
+        run_flow(
+            write_flow(tmp_path, source),
+            runs_root=tmp_path / "runs",
+            engine_options={"exec_fn": structured},
+        )
+    )
+    assert outcome.result == ["one"]
 
 
 def test_cli_flow_run_end_to_end_with_fake_provider(tmp_path, monkeypatch, capsys):

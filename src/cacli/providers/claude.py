@@ -38,6 +38,28 @@ def _normalize_claude_versioned_model(model: str) -> str | None:
     return f"claude-{family}-{version}"
 
 
+def _settings_args(settings: str | None, sandbox: bool | None) -> str:
+    if sandbox is not None and settings is not None:
+        raise ValueError("claude sandbox cannot be combined with custom settings")
+    if sandbox is None:
+        return f" --settings {shlex.quote(settings)}" if settings else ""
+    sandbox_settings = {
+        "sandbox": {
+            "enabled": sandbox,
+            **(
+                {
+                    "autoAllowBashIfSandboxed": True,
+                    "failIfUnavailable": True,
+                }
+                if sandbox
+                else {}
+            ),
+        }
+    }
+    encoded = json.dumps(sandbox_settings, separators=(",", ":"))
+    return f" --settings {shlex.quote(encoded)}"
+
+
 class ClaudeProvider(BaseProvider):
     """Provider for the Claude Code CLI."""
 
@@ -70,8 +92,9 @@ class ClaudeProvider(BaseProvider):
             effort_map = {"xhigh": "max"}
             effort = effort_map.get(reasoning_effort, reasoning_effort)
             cmd += f" --effort {shlex.quote(effort)}"
-        if settings:
-            cmd += f" --settings {shlex.quote(settings)}"
+        cmd += _settings_args(settings, sandbox)
+        if output_schema is not None:
+            cmd += f" --json-schema {shlex.quote(json.dumps(output_schema, sort_keys=True, separators=(',', ':')))}"
         if not web_search:
             cmd += " --disallowedTools WebFetch --disallowedTools WebSearch"
         return cmd
@@ -80,6 +103,7 @@ class ClaudeProvider(BaseProvider):
         result_message = ""
         total_cost = None
         permission_denials = []
+        structured_output = None
 
         for line in reversed(raw_output.strip().split("\n")):
             if not line.strip():
@@ -94,8 +118,9 @@ class ClaudeProvider(BaseProvider):
                         result_message = item.get("result", "")
                         total_cost = item.get("total_cost_usd")
                         permission_denials = item.get("permission_denials", [])
+                        structured_output = item.get("structured_output")
                         break
-                if result_message:
+                if result_message or structured_output is not None:
                     break
             except json.JSONDecodeError:
                 continue
@@ -104,6 +129,7 @@ class ClaudeProvider(BaseProvider):
             result_message=result_message,
             total_cost=total_cost,
             permission_denials=permission_denials,
+            structured_output=structured_output,
         )
 
     def build_initial_log_entry(self, prompt: str, model: str | None = None) -> str:
@@ -128,8 +154,7 @@ class ClaudeProvider(BaseProvider):
         cmd = f"claude -p {safe_prompt} --verbose --output-format json"
         if model:
             cmd += f" --model {shlex.quote(model)}"
-        if settings:
-            cmd += f" --settings {shlex.quote(settings)}"
+        cmd += _settings_args(settings, sandbox)
         return cmd
 
     def extract_result_from_json(self, raw_output: str) -> str:

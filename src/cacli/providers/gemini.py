@@ -42,6 +42,10 @@ class GeminiProvider(BaseProvider):
         sandbox: bool | None = None,
         output_schema: dict | None = None,
     ) -> str:
+        if sandbox is not None:
+            raise NotImplementedError(
+                f"provider {self.name!r} does not support sandbox configuration"
+            )
         safe_prompt = shlex.quote(prompt)
         resolved_model = self.resolve_model(model)
         cmd = f"gemini -p {safe_prompt} -y --output-format stream-json -m {shlex.quote(resolved_model)} 2>&1 | grep '^{{'"
@@ -101,6 +105,10 @@ class GeminiProvider(BaseProvider):
         settings: str | None = None,
         sandbox: bool | None = None,
     ) -> str:
+        if sandbox is not None:
+            raise NotImplementedError(
+                f"provider {self.name!r} does not support sandbox configuration"
+            )
         safe_prompt = shlex.quote(prompt)
         resolved_model = self.resolve_model(model)
         cmd = f"gemini -p {safe_prompt} -y -m {shlex.quote(resolved_model)}"

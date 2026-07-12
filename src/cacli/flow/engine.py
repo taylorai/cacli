@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from typing import Any, Awaitable, Callable
 
@@ -10,6 +11,15 @@ from cacli.flow.aexec import AsyncExecResult, aexec, terminate_process
 from cacli.flow.costs import estimated_cost
 from cacli.flow.journal import JournalKeyChain, ResumeCache
 from cacli.flow.runs import FlowRun
+from cacli.flow.schema import (
+    canonical_schema,
+    decorate_prompt,
+    extract_json,
+    retry_prompt,
+    schema_tier,
+    strictify,
+    validate_output,
+)
 from cacli.providers import get_provider
 
 
@@ -161,11 +171,12 @@ class FlowEngine:
         timeout: float,
         stall_timeout: float | None,
         retries: int,
+        schema_retries: int,
         web_search: bool,
         settings: str | None,
         sandbox: bool | None,
         env: dict[str, str] | None,
-    ) -> str | None:
+    ) -> Any | None:
         if self.cancel_event.is_set():
             raise RuntimeError("FlowCancelled: workflow cancelled")
         provider = get_provider(provider_name)
@@ -233,102 +244,183 @@ class FlowEngine:
         self._event("queued", **common)
         log_path = self.run.agent_log_path(index, label)
         log_path.touch()
+        tier = schema_tier(provider_name) if schema is not None else None
+        schema_path = None
+        if tier == "native-file":
+            schema_path = self.run.path / "agents" / f"{index:04d}.schema.json"
+            schema_path.write_text(canonical_schema(strictify(schema)))
         started = time.monotonic()
         final_error = "unknown failure"
         total_cost: float | None = None
-        result_message: str | None = None
+        final_result: Any | None = None
+        last_candidate = ""
+        process_attempt = 0
 
-        async with self.semaphore:
-            if self.cancel_event.is_set():
-                raise RuntimeError("FlowCancelled: workflow cancelled")
-            for attempt in range(retries + 1):
+        try:
+            async with self.semaphore:
                 if self.cancel_event.is_set():
                     raise RuntimeError("FlowCancelled: workflow cancelled")
-                self._event("started", attempt=attempt + 1, **common)
-                self.run.journal(
-                    {
-                        "type": "started",
-                        **common,
-                        "model": resolved_model,
-                        "attempt": attempt + 1,
-                    }
+                schema_attempts = schema_retries + 1 if schema is not None else 1
+                decorated = (
+                    decorate_prompt(prompt, schema) if schema is not None else prompt
                 )
+                schema_prompt = decorated if tier == "prompt" else prompt
+                for schema_attempt in range(schema_attempts):
+                    response_text = ""
+                    agent_result = None
+                    for exec_attempt in range(retries + 1):
+                        agent_result = None
+                        if self.cancel_event.is_set():
+                            raise RuntimeError("FlowCancelled: workflow cancelled")
+                        process_attempt += 1
+                        self._event(
+                            "started",
+                            attempt=process_attempt,
+                            schema_attempt=schema_attempt + 1,
+                            **common,
+                        )
+                        self.run.journal(
+                            {
+                                "type": "started",
+                                **common,
+                                "model": resolved_model,
+                                "attempt": process_attempt,
+                                "schema_attempt": schema_attempt + 1,
+                            }
+                        )
 
-                def write_output(text: str) -> None:
-                    with log_path.open("a") as handle:
-                        handle.write(text)
+                        def write_output(text: str) -> None:
+                            with log_path.open("a") as handle:
+                                handle.write(text)
 
-                proc: asyncio.subprocess.Process | None = None
+                        proc: asyncio.subprocess.Process | None = None
 
-                def register(value: asyncio.subprocess.Process) -> None:
-                    nonlocal proc
-                    proc = value
-                    self._register_process(value)
+                        def register(value: asyncio.subprocess.Process) -> None:
+                            nonlocal proc
+                            proc = value
+                            self._register_process(value)
 
-                exec_result: AsyncExecResult | None = None
-                try:
-                    command = provider.build_command(
-                        prompt=prompt + FLOW_PROMPT_SUFFIX,
-                        model=resolved_model,
-                        reasoning_effort=effort,
-                        web_search=web_search,
-                        settings=settings,
-                        sandbox=sandbox,
-                        output_schema=None,
-                    )
-                    exec_result = await self.exec_fn(
-                        command,
-                        cwd,
-                        timeout,
-                        env,
-                        on_output=write_output,
-                        stall_timeout=stall_timeout,
-                        on_process=register,
-                    )
-                except asyncio.CancelledError:
-                    raise
-                except Exception as exc:
-                    final_error = f"execution failed: {exc}"
-                finally:
-                    if proc is not None:
-                        self._processes.discard(proc)
+                        exec_result: AsyncExecResult | None = None
+                        try:
+                            output_schema = None
+                            if tier == "native":
+                                output_schema = schema
+                            elif tier == "native-file":
+                                output_schema = schema_path
+                            command = provider.build_command(
+                                prompt=schema_prompt + FLOW_PROMPT_SUFFIX,
+                                model=resolved_model,
+                                reasoning_effort=effort,
+                                web_search=web_search,
+                                settings=settings,
+                                sandbox=sandbox,
+                                output_schema=output_schema,
+                            )
+                            exec_result = await self.exec_fn(
+                                command,
+                                cwd,
+                                timeout,
+                                env,
+                                on_output=write_output,
+                                stall_timeout=stall_timeout,
+                                on_process=register,
+                            )
+                        except asyncio.CancelledError:
+                            raise
+                        except Exception as exc:
+                            final_error = f"execution failed: {exc}"
+                        finally:
+                            if proc is not None:
+                                self._processes.discard(proc)
 
-                if self.cancel_event.is_set():
-                    raise RuntimeError("FlowCancelled: workflow cancelled")
-                if exec_result is None:
-                    pass
-                elif exec_result.timed_out:
-                    final_error = f"timed out after {timeout:g}s"
-                elif exec_result.stalled:
-                    final_error = f"stalled for {stall_timeout:g}s"
-                elif exec_result.exit_code != 0:
-                    final_error = f"process exited {exec_result.exit_code}"
-                else:
-                    try:
-                        agent_result = provider.parse_output(exec_result.stdout)
-                    except Exception as exc:
-                        final_error = f"output parse failed: {exc}"
+                        if self.cancel_event.is_set():
+                            raise RuntimeError("FlowCancelled: workflow cancelled")
+                        if exec_result is None:
+                            pass
+                        elif exec_result.timed_out:
+                            final_error = f"timed out after {timeout:g}s"
+                        elif exec_result.stalled:
+                            final_error = f"stalled for {stall_timeout:g}s"
+                        elif exec_result.exit_code != 0:
+                            final_error = f"process exited {exec_result.exit_code}"
+                        else:
+                            try:
+                                agent_result = provider.parse_output(exec_result.stdout)
+                            except Exception as exc:
+                                final_error = f"output parse failed: {exc}"
+                            else:
+                                response_text = agent_result.result_message
+                                if agent_result.total_cost is not None:
+                                    total_cost = (
+                                        total_cost or 0.0
+                                    ) + agent_result.total_cost
+                                if isinstance(response_text, str) and response_text:
+                                    break
+                                if (
+                                    schema is not None
+                                    and agent_result.structured_output is not None
+                                ):
+                                    break
+                                final_error = "provider returned no result"
+
+                        if exec_attempt < retries:
+                            delay = self.retry_delays[
+                                min(exec_attempt, len(self.retry_delays) - 1)
+                            ]
+                            self._event(
+                                "retry",
+                                attempt=process_attempt,
+                                delay=delay,
+                                error=final_error,
+                                **common,
+                            )
+                            await self._backoff(delay)
+
+                    if agent_result is None:
+                        break
+                    if schema is None:
+                        final_result = response_text
+                        break
+
+                    candidate = agent_result.structured_output
+                    if candidate is None:
+                        candidate = extract_json(response_text)
+                        last_candidate = response_text
                     else:
-                        message = agent_result.result_message
-                        if isinstance(message, str) and message:
-                            result_message = message
-                            total_cost = agent_result.total_cost
+                        last_candidate = json.dumps(
+                            candidate, sort_keys=True, separators=(",", ":")
+                        )
+                    if candidate is None:
+                        final_error = "could not extract a JSON object or array"
+                    else:
+                        validation_error = validate_output(candidate, schema)
+                        if validation_error is None:
+                            final_result = candidate
                             break
-                        final_error = "provider returned no result"
+                        final_error = validation_error
 
-                if attempt < retries:
-                    delay = self.retry_delays[min(attempt, len(self.retry_delays) - 1)]
-                    self._event(
-                        "retry",
-                        attempt=attempt + 1,
-                        delay=delay,
-                        error=final_error,
-                        **common,
-                    )
-                    await self._backoff(delay)
+                    if schema_attempt < schema_retries:
+                        self._event(
+                            "schema_retry",
+                            attempt=schema_attempt + 1,
+                            error=final_error,
+                            **common,
+                        )
+                        schema_prompt = retry_prompt(
+                            decorated, final_error, last_candidate
+                        )
+                if (
+                    schema is not None
+                    and final_result is None
+                    and agent_result is not None
+                ):
+                    final_error = "schema_exhausted"
+        finally:
+            if schema_path is not None:
+                schema_path.unlink(missing_ok=True)
 
         duration_ms = int((time.monotonic() - started) * 1000)
-        succeeded = result_message is not None
+        succeeded = final_result is not None
         cost_estimated = succeeded and total_cost is None
         effective_cost = estimated_cost(provider_name) if cost_estimated else total_cost
         entry = {
@@ -338,13 +430,15 @@ class FlowEngine:
             "label": label,
             "provider": provider_name,
             "model": resolved_model,
-            "result": result_message,
+            "result": final_result,
             "cost": effective_cost,
             "cost_estimated": cost_estimated,
             "duration_ms": duration_ms,
         }
         if not succeeded:
             entry["error"] = final_error
+            if final_error == "schema_exhausted":
+                entry["last_candidate"] = last_candidate[:1000]
         self.run.journal(entry)
         totals = self.run.meta["totals"]
         totals["succeeded" if succeeded else "failed"] += 1
@@ -361,4 +455,4 @@ class FlowEngine:
             )
         else:
             self._event("failed", duration_ms=duration_ms, error=final_error, **common)
-        return result_message
+        return final_result

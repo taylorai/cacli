@@ -31,7 +31,10 @@ class CursorProvider(BaseProvider):
     ) -> str:
         resolved_model = self.resolve_model(model)
         safe_prompt = shlex.quote(prompt)
-        cmd = f"agent --print --output-format stream-json --force --model {shlex.quote(resolved_model)} {safe_prompt}"
+        cmd = f"agent --print --output-format stream-json --force --model {shlex.quote(resolved_model)}"
+        if sandbox is not None:
+            cmd += f" --sandbox {'enabled' if sandbox else 'disabled'}"
+        cmd += f" {safe_prompt}"
         return cmd
 
     def parse_output(self, raw_output: str) -> AgentRunResult:
@@ -76,7 +79,10 @@ class CursorProvider(BaseProvider):
     ) -> str:
         resolved_model = self.resolve_model(model)
         safe_prompt = shlex.quote(prompt)
-        cmd = f"agent --print --output-format json --force --model {shlex.quote(resolved_model)} {safe_prompt}"
+        cmd = f"agent --print --output-format json --force --model {shlex.quote(resolved_model)}"
+        if sandbox is not None:
+            cmd += f" --sandbox {'enabled' if sandbox else 'disabled'}"
+        cmd += f" {safe_prompt}"
         return cmd
 
     def extract_result_from_json(self, raw_output: str) -> str:

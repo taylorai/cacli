@@ -22,8 +22,7 @@ def _sandbox_args(sandbox: bool | None) -> str:
     # Codex blocks network inside workspace-write by default; allow it so
     # sandboxed runs match Devin's sandbox semantics (FS confined, net open).
     return (
-        "--sandbox workspace-write"
-        " --config sandbox_workspace_write.network_access=true"
+        "--sandbox workspace-write --config sandbox_workspace_write.network_access=true"
     )
 
 
@@ -52,10 +51,12 @@ class CodexProvider(BaseProvider):
         cmd += f" --model {shlex.quote(model)}"
         if reasoning_effort is None:
             reasoning_effort = DEFAULT_REASONING_EFFORT
-        cmd += " --config " f"model_reasoning_effort={shlex.quote(reasoning_effort)}"
+        cmd += f" --config model_reasoning_effort={shlex.quote(reasoning_effort)}"
 
         if web_search:
             cmd += " --config features.web_search_request=true"
+        if output_schema is not None:
+            cmd += f" --output-schema {shlex.quote(str(output_schema))}"
         return cmd
 
     def parse_output(self, raw_output: str) -> AgentRunResult:

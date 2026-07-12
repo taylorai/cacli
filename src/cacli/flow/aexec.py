@@ -79,6 +79,9 @@ async def aexec(
         cmd,
         cwd=cwd,
         env=clean_environment(env),
+        # DEVNULL, not inherit: codex exec blocks forever reading a stdin that
+        # never reaches EOF; headless agents must see a closed stdin.
+        stdin=asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         start_new_session=True,

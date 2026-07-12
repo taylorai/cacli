@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from pathlib import Path
@@ -110,11 +111,12 @@ class FlowHost:
         timeout: Any = 3600,
         stall_timeout: Any = 300,
         retries: Any = 2,
+        schema_retries: Any = 2,
         web_search: Any = True,
         settings: Any = None,
         sandbox: Any = None,
         env: Any = None,
-    ) -> str | None:
+    ) -> Any | None:
         if self.engine.cancel_event.is_set():
             raise RuntimeError("FlowCancelled: workflow cancelled")
         if not isinstance(prompt, str):
@@ -134,7 +136,18 @@ class FlowHost:
         ):
             raise ValueError(f"effort must be one of: {', '.join(sorted(EFFORTS))}")
         if schema is not None:
-            raise ValueError("schema support lands in Phase 3")
+            if not isinstance(schema, dict):
+                raise TypeError("schema must be a dict or null")
+            try:
+                canonical_schema = json.dumps(
+                    schema, sort_keys=True, separators=(",", ":"), allow_nan=False
+                )
+            except (TypeError, ValueError) as exc:
+                raise ValueError("schema must be JSON-serializable") from exc
+            if len(canonical_schema.encode()) > 100_000:
+                raise ValueError("schema is too large (max 100KB canonical JSON)")
+            if schema.get("type") not in {"object", "array"}:
+                raise ValueError('schema top-level "type" must be "object" or "array"')
         label = _optional_string("label", label)
         phase = _optional_string("phase", phase)
         settings = _optional_string("settings", settings)
@@ -150,6 +163,12 @@ class FlowHost:
             or not 0 <= retries <= 10
         ):
             raise ValueError("retries must be an integer from 0 to 10")
+        if (
+            isinstance(schema_retries, bool)
+            or not isinstance(schema_retries, int)
+            or not 0 <= schema_retries <= 10
+        ):
+            raise ValueError("schema_retries must be an integer from 0 to 10")
         if not isinstance(web_search, bool):
             raise TypeError("web_search must be a boolean")
         if sandbox is not None and not isinstance(sandbox, bool):
@@ -186,6 +205,7 @@ class FlowHost:
             timeout=timeout_value,
             stall_timeout=stall_value,
             retries=retries,
+            schema_retries=schema_retries,
             web_search=web_search,
             settings=settings,
             sandbox=sandbox,
