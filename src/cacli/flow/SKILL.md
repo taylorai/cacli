@@ -78,10 +78,10 @@ All arguments after `prompt` are keyword-only.
 
 | kwarg | default | meaning |
 |---|---|---|
-| `provider` | flow default (`--provider` / `META["default_provider"]` / `"claude"`) | `"claude"`, `"codex"`, `"devin"`, `"cursor"` |
+| `provider` | flow default (`--provider` / `META["default_provider"]` / `"claude"`) | any registered provider: `"claude"`, `"codex"`, `"openai"`, `"devin"`, `"cursor"`, `"gemini"` |
 | `model` | provider default | provider model aliases accepted |
 | `effort` | None | `"low"`/`"medium"`/`"high"`/`"xhigh"`/`"max"` where supported |
-| `schema` | None | JSON Schema **dict literal**; returns a validated dict/list instead of str (see Structured output) |
+| `schema` | None | JSON Schema dict (top-level `type` must be `"object"` or `"array"`, ≤100KB); returns a validated dict/list instead of str (see Structured output) |
 | `label` | first 60 chars of prompt | display label (not part of resume identity) |
 | `phase` | ambient `phase()` value | explicit phase group (use inside parallel/pipeline stages) |
 | `cwd` | flow cwd | must be the flow cwd or a subdirectory |
@@ -187,7 +187,8 @@ Runs live in `~/.cacli/flows/<run_id>/` with per-agent raw logs under
 ## Resume
 
 `--resume <run_id>` replays the longest unchanged prefix of agent calls from
-the previous run's journal (instant, zero cost), then goes live at the first
+the previous run's journal (instant, no re-execution — though replayed costs
+still count against the resumed run's budget), then goes live at the first
 call whose identity (prompt/provider/model/effort/schema/cwd) differs.
 Resuming with an edited script or different `--args` is the intended
 iteration workflow: fix a later stage, keep earlier results cached. Cached

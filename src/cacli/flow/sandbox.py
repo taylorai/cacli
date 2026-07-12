@@ -16,11 +16,14 @@ from pydantic_monty import Monty, ResourceLimits
 from cacli.flow.shim import EPILOGUE, PRELUDE
 
 
-# max_duration_secs only meters interpreter bytecode time (the clock pauses
-# during host awaits), so its sole job is killing runaway loops — generous on
-# purpose. Agent wall-clock is bounded host-side in engine/aexec.
+# On monty 0.0.18 the max_duration_secs clock pauses during a SINGLE pending
+# host await but keeps running while suspended on multiple concurrent futures
+# (asyncio.gather fan-outs) — so it effectively measures wall clock for real
+# flows and must exceed any plausible flow duration. 24h keeps a bound on true
+# runaway loops; agent wall-clock is enforced host-side in engine/aexec.
+# Revisit with 0.0.19's worker watchdog.
 DEFAULT_LIMITS = ResourceLimits(
-    max_duration_secs=60.0,
+    max_duration_secs=86_400.0,
     max_memory=64 * 1024 * 1024,
     max_allocations=500_000,
     max_recursion_depth=200,
