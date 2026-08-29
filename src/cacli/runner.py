@@ -42,7 +42,10 @@ def run_agent(
     exec_result: ExecResult = exec_fn(command, cwd, timeout, env)
 
     agent_result = prov.parse_output(exec_result.stdout)
-    agent_result.exit_code = exec_result.exit_code
+    # Some providers report API failures in their structured output while the
+    # CLI process itself exits successfully. Preserve a parsed failure unless
+    # the subprocess has a stronger non-zero status.
+    agent_result.exit_code = exec_result.exit_code or agent_result.exit_code
     agent_result.raw_output = exec_result.stdout
     agent_result.provider = provider
     agent_result.model = resolved_model

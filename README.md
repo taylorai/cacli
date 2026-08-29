@@ -69,7 +69,7 @@ the same reference as an agent skill with `cacli flow install-skill`.
 
 Headline features:
 
-- Cross-provider `agent()` calls to Claude, Codex, Devin, and Cursor
+- Cross-provider `agent()` calls to Claude, Codex, Devin, Cursor, Gemini, OpenCode, and Pi
 - Structured output validated against JSON Schema
 - Journal-based resume that replays unchanged calls
 - Dollar budgets with resumable budget-exceeded runs

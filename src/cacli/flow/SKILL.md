@@ -1,6 +1,6 @@
 ---
 name: cacli-flow
-description: Orchestrate multiple coding agents (claude, codex, devin, cursor) from one sandboxed Python workflow script via `cacli flow`. Use when a task calls for fanning out agent calls in parallel, cross-vendor review/verification panels, racing providers, structured JSON output from agents, budget-capped agent loops, or resumable multi-agent pipelines. Triggers: "workflow", "fan out", "run agents in parallel", "cross-review", "judge panel", "cacli flow".
+description: Orchestrate multiple coding agents (claude, codex, devin, cursor, gemini, opencode, pi) from one sandboxed Python workflow script via `cacli flow`. Use when a task calls for fanning out agent calls in parallel, cross-vendor review/verification panels, racing providers, structured JSON output from agents, budget-capped agent loops, or resumable multi-agent pipelines. Triggers: "workflow", "fan out", "run agents in parallel", "cross-review", "judge panel", "cacli flow".
 ---
 
 # cacli flow: cross-provider agent workflows
@@ -78,7 +78,7 @@ All arguments after `prompt` are keyword-only.
 
 | kwarg | default | meaning |
 |---|---|---|
-| `provider` | flow default (`--provider` / `META["default_provider"]` / `"claude"`) | any registered provider: `"claude"`, `"codex"`, `"openai"`, `"devin"`, `"cursor"`, `"gemini"` |
+| `provider` | flow default (`--provider` / `META["default_provider"]` / `"claude"`) | any registered provider: `"claude"`, `"codex"`, `"openai"`, `"devin"`, `"cursor"`, `"gemini"`, `"opencode"`, `"pi"` |
 | `model` | provider default | provider model aliases accepted |
 | `effort` | None | `"low"`/`"medium"`/`"high"`/`"xhigh"`/`"max"` where supported |
 | `schema` | None | JSON Schema dict (top-level `type` must be `"object"` or `"array"`, ≤100KB); returns a validated dict/list instead of str (see Structured output) |

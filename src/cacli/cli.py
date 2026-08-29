@@ -84,7 +84,7 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         "--settings",
         "-s",
         default=None,
-        help="Path to settings file (forwarded to claude --settings)",
+        help="Path to a provider-specific settings file",
     )
     parser.add_argument(
         "--no-web-search",

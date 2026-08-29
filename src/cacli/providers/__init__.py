@@ -6,6 +6,8 @@ from cacli.providers.codex import CodexProvider
 from cacli.providers.cursor import CursorProvider
 from cacli.providers.devin import DevinProvider
 from cacli.providers.gemini import GeminiProvider
+from cacli.providers.opencode import OpenCodeProvider
+from cacli.providers.pi import PiProvider
 
 _PROVIDERS: dict[str, BaseProvider] = {}
 
@@ -17,6 +19,8 @@ def _init_registry() -> None:
     _PROVIDERS["gemini"] = GeminiProvider()
     _PROVIDERS["cursor"] = CursorProvider()
     _PROVIDERS["devin"] = DevinProvider()
+    _PROVIDERS["opencode"] = OpenCodeProvider()
+    _PROVIDERS["pi"] = PiProvider()
 
 
 _init_registry()
