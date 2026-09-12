@@ -2,6 +2,7 @@
 
 import json
 import shlex
+import warnings
 from typing import Any
 
 from cacli.providers.base import BaseProvider
@@ -62,6 +63,14 @@ class OpenCodeProvider(BaseProvider):
         sandbox: bool | None = None,
         output_schema: dict | None = None,
     ) -> str:
+        if not web_search:
+            warnings.warn(
+                "OpenCode does not support cacli's web_search option; "
+                "web_search=False (--no-web-search) is ignored. "
+                "Search availability is controlled by OpenCode configuration.",
+                UserWarning,
+                stacklevel=2,
+            )
         if sandbox:
             raise NotImplementedError(
                 "provider 'opencode' relies on external sandboxing and cannot "
@@ -79,11 +88,11 @@ class OpenCodeProvider(BaseProvider):
         ]
         if reasoning_effort and reasoning_effort != "auto":
             parts.extend(["--variant", reasoning_effort])
-        parts.append(prompt)
 
         if settings is not None:
             parts = ["env", f"OPENCODE_CONFIG={settings}", *parts]
-        return shlex.join(parts)
+        # Stdin avoids CLI flag parsing and OpenCode's positional quote rewriting.
+        return f"printf '%s' {shlex.quote(prompt)} | {shlex.join(parts)}"
 
     def parse_output(self, raw_output: str) -> AgentRunResult:
         texts_by_message: dict[str, list[str]] = {}
@@ -106,8 +115,7 @@ class OpenCodeProvider(BaseProvider):
             event_type = event.get("type")
             if event_type == "error":
                 message = _error_message(event.get("error"))
-                if message:
-                    last_error = message
+                last_error = message or "OpenCode provider returned an error"
                 continue
 
             part = event.get("part")
@@ -142,12 +150,13 @@ class OpenCodeProvider(BaseProvider):
                     saw_cost = True
 
         result_message = ""
-        if message_order:
-            result_message = "\n".join(texts_by_message[message_order[-1]]).strip()
-        elif last_error:
+        if last_error:
             result_message = last_error
+        elif message_order:
+            result_message = "\n".join(texts_by_message[message_order[-1]]).strip()
 
         return AgentRunResult(
+            exit_code=1 if last_error else 0,
             result_message=result_message,
             total_cost=total_cost if saw_cost else None,
         )

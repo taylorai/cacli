@@ -1,9 +1,13 @@
 import json
+import os
+import subprocess
 import shlex
 
 import pytest
 
 from cacli.providers import list_providers
+from cacli.runner import run_agent
+from cacli.types import ExecResult
 from cacli.providers.opencode import OPENCODE_DEFAULT_MODEL, OpenCodeProvider
 
 
@@ -18,6 +22,10 @@ def test_build_command_defaults_to_glm_53_and_auto_approves():
     )
 
     assert shlex.split(command) == [
+        "printf",
+        "%s",
+        "fix the tests; echo not-a-command",
+        "|",
         "opencode",
         "run",
         "--format",
@@ -25,7 +33,6 @@ def test_build_command_defaults_to_glm_53_and_auto_approves():
         "--auto",
         "--model",
         OPENCODE_DEFAULT_MODEL,
-        "fix the tests; echo not-a-command",
     ]
 
 
@@ -38,6 +45,10 @@ def test_build_command_resolves_alias_and_forwards_variant_and_settings():
     )
 
     assert shlex.split(command) == [
+        "printf",
+        "%s",
+        "hello",
+        "|",
         "env",
         "OPENCODE_CONFIG=/tmp/open code.json",
         "opencode",
@@ -49,7 +60,6 @@ def test_build_command_resolves_alias_and_forwards_variant_and_settings():
         OPENCODE_DEFAULT_MODEL,
         "--variant",
         "high",
-        "hello",
     ]
 
 
@@ -175,4 +185,65 @@ def test_initial_log_entry_extract_result_and_skills_dir():
 def test_pr_description_command_uses_structured_headless_mode():
     parts = shlex.split(OpenCodeProvider().build_pr_description_command("describe"))
 
-    assert parts[:5] == ["opencode", "run", "--format", "json", "--auto"]
+    assert parts[4:9] == ["opencode", "run", "--format", "json", "--auto"]
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "--help",
+        "- Summarize these points",
+        "@team please review",
+        "Quotes: ' and \"; $(exit 9); `exit 8`; 100%\\n\nUnicode: café",
+        "  keep whitespace\n\n",
+    ],
+)
+def test_prompt_stdin_preserves_literal_content_and_exit_status(tmp_path, prompt):
+    executable = tmp_path / "opencode"
+    executable.write_text(
+        "#!/bin/sh\ncat\nprintf '%s' \"$OPENCODE_CONFIG\" >&2\nexit 7\n"
+    )
+    executable.chmod(0o755)
+    result = subprocess.run(
+        OpenCodeProvider().build_command(prompt, settings="/tmp/open code.json"),
+        shell=True,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "PATH": f"{tmp_path}:{os.environ['PATH']}"},
+    )
+    assert result.stdout == prompt
+    assert result.stderr == "/tmp/open code.json"
+    assert result.returncode == 7
+
+
+def test_disabling_web_search_warns():
+    with pytest.warns(UserWarning, match="web_search=False.*ignored"):
+        OpenCodeProvider().build_command("test", web_search=False)
+
+
+@pytest.mark.parametrize(
+    "error,expected",
+    [
+        ({"data": {"message": "quota exhausted"}}, "quota exhausted"),
+        ({}, "OpenCode provider returned an error"),
+    ],
+)
+@pytest.mark.parametrize("process_exit", [0, 7])
+def test_error_overrides_text_and_preserves_failure_and_cost(
+    error, expected, process_exit
+):
+    events = [
+        {"type": "text", "part": {"id": "p1", "messageID": "m1", "text": "partial"}},
+        {"type": "step_finish", "part": {"id": "f1", "cost": 0.25}},
+        {"type": "error", "error": error},
+        # A later completed part notification must not erase a terminal error.
+        {"type": "text", "part": {"id": "p2", "messageID": "m1", "text": "late text"}},
+    ]
+    raw = "\n".join(json.dumps(event) for event in events)
+    parsed = OpenCodeProvider().parse_output(raw)
+    assert parsed.exit_code == 1
+    assert parsed.result_message == expected
+    result = run_agent("opencode", "test", lambda *args: ExecResult(process_exit, raw))
+    assert result.exit_code == (process_exit or 1)
+    assert result.result_message == expected
+    assert result.total_cost == pytest.approx(0.25)

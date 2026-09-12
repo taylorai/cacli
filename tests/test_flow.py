@@ -483,6 +483,54 @@ def test_pi_structured_failures_retry_and_preserve_cost(tmp_path, recover, schem
         assert results[0]["error"] == "401 Unauthorized"
 
 
+@pytest.mark.parametrize("recover", [False, True])
+@pytest.mark.parametrize("schema", [None, {"type": "object"}])
+def test_opencode_structured_failures_retry_and_preserve_cost(
+    tmp_path, recover, schema
+):
+    attempts = 0
+
+    async def opencode_exec(*args, **kwargs):
+        nonlocal attempts
+        attempts += 1
+        success = recover and attempts == 2
+        events = [
+            {
+                "type": "text",
+                "part": {"id": "p1", "messageID": "m1", "text": '{"ok": true}'},
+            },
+            {"type": "step_finish", "part": {"id": "f1", "cost": 0.25}},
+        ]
+        if not success:
+            events.append(
+                {"type": "error", "error": {"data": {"message": "401 Unauthorized"}}}
+            )
+        return AsyncExecResult(0, "\n".join(json.dumps(event) for event in events))
+
+    source = (
+        "async def main():\n"
+        f'    return await agent("test", provider="opencode", retries=1, schema={schema!r})\n'
+    )
+    outcome = run(
+        run_flow(
+            write_flow(tmp_path, source),
+            runs_root=tmp_path / "runs",
+            engine_options={"exec_fn": opencode_exec, "retry_delays": (0.0,)},
+        )
+    )
+    assert attempts == 2
+    expected = {"ok": True} if schema else '{"ok": true}'
+    assert outcome.result == (expected if recover else None)
+    shown = show_run(outcome.run_id, tmp_path / "runs")
+    totals = shown["meta"]["totals"]
+    assert totals["succeeded"] == int(recover)
+    assert totals["failed"] == int(not recover)
+    assert totals["cost"] == pytest.approx(0.5)
+    if not recover:
+        results = [e for e in shown["journal"] if e["type"] == "result"]
+        assert results[0]["error"] == "401 Unauthorized"
+
+
 def test_semaphore_bounds_concurrent_agents(tmp_path):
     active = 0
     maximum = 0
