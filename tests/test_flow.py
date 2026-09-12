@@ -439,6 +439,50 @@ def test_retry_can_recover_parseable_output(tmp_path):
     assert attempts == 2
 
 
+@pytest.mark.parametrize("recover", [False, True])
+@pytest.mark.parametrize("schema", [None, {"type": "object"}])
+def test_pi_structured_failures_retry_and_preserve_cost(tmp_path, recover, schema):
+    attempts = 0
+
+    async def pi_exec(*args, **kwargs):
+        nonlocal attempts
+        attempts += 1
+        success = recover and attempts == 2
+        message = {
+            "role": "assistant",
+            "content": [{"type": "text", "text": '{"ok": true}'}],
+            "stopReason": "stop" if success else "error",
+            "errorMessage": "401 Unauthorized",
+            "usage": {"cost": {"total": 0.25}},
+        }
+        return AsyncExecResult(
+            0, json.dumps({"type": "message_end", "message": message})
+        )
+
+    source = (
+        "async def main():\n"
+        f'    return await agent("test", provider="pi", retries=1, schema={schema!r})\n'
+    )
+    outcome = run(
+        run_flow(
+            write_flow(tmp_path, source),
+            runs_root=tmp_path / "runs",
+            engine_options={"exec_fn": pi_exec, "retry_delays": (0.0,)},
+        )
+    )
+    assert attempts == 2
+    expected = {"ok": True} if schema else '{"ok": true}'
+    assert outcome.result == (expected if recover else None)
+    shown = show_run(outcome.run_id, tmp_path / "runs")
+    totals = shown["meta"]["totals"]
+    assert totals["succeeded"] == int(recover)
+    assert totals["failed"] == int(not recover)
+    assert totals["cost"] == pytest.approx(0.5)
+    if not recover:
+        results = [e for e in shown["journal"] if e["type"] == "result"]
+        assert results[0]["error"] == "401 Unauthorized"
+
+
 def test_semaphore_bounds_concurrent_agents(tmp_path):
     active = 0
     maximum = 0

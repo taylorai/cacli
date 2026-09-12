@@ -78,8 +78,8 @@ class PiProvider(BaseProvider):
             parts.extend(["--model", model])
         if reasoning_effort and reasoning_effort != "auto":
             parts.extend(["--thinking", reasoning_effort])
-        parts.append(prompt)
-        return shlex.join(parts)
+        # Stdin keeps leading '-' and '@' in prompts out of Pi's CLI parser.
+        return f"printf '%s' {shlex.quote(prompt)} | {shlex.join(parts)}"
 
     def parse_output(self, raw_output: str) -> AgentRunResult:
         result_message = ""
@@ -101,12 +101,13 @@ class PiProvider(BaseProvider):
                 result_message = text
 
             if isinstance(message, dict) and message.get("role") == "assistant":
-                if message.get("stopReason") == "error":
+                stop_reason = message.get("stopReason")
+                if stop_reason in ("error", "aborted"):
                     error_message = message.get("errorMessage")
                     provider_error = (
                         error_message
                         if isinstance(error_message, str) and error_message
-                        else "Pi provider returned an error"
+                        else f"Pi request ended with {stop_reason}"
                     )
                 else:
                     # Pi may emit a retryable error before a later successful

@@ -1,5 +1,7 @@
 import json
+import os
 import shlex
+import subprocess
 
 import pytest
 
@@ -25,6 +27,10 @@ def test_build_command_uses_safe_headless_mode_and_qualified_model():
     )
 
     assert shlex.split(command) == [
+        "printf",
+        "%s",
+        "fix the tests; echo not-a-command",
+        "|",
         "pi",
         "--mode",
         "json",
@@ -35,8 +41,34 @@ def test_build_command_uses_safe_headless_mode_and_qualified_model():
         MODEL,
         "--thinking",
         "high",
-        "fix the tests; echo not-a-command",
     ]
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "- Summarize these points",
+        "--help",
+        "@team please review this",
+        "Quotes: ' and \"; $(exit 9); `exit 8`; 100%\\n\nUnicode: café",
+        "  keep whitespace\n\n",
+    ],
+)
+def test_build_command_delivers_literal_prompt_on_stdin(tmp_path, prompt):
+    # Replace only the executable through PATH and exercise the real shell.
+    pi = tmp_path / "pi"
+    pi.write_text("#!/bin/sh\ncat\nexit 7\n")
+    pi.chmod(0o755)
+    result = subprocess.run(
+        PiProvider().build_command(prompt),
+        shell=True,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "PATH": f"{tmp_path}:{os.environ['PATH']}"},
+    )
+
+    assert result.stdout == prompt
+    assert result.returncode == 7
 
 
 def test_build_command_omits_optional_model_and_auto_thinking():
@@ -120,14 +152,15 @@ def test_parse_output_tolerates_missing_or_invalid_cost():
     assert result.total_cost is None
 
 
-def test_parse_output_surfaces_provider_error():
+@pytest.mark.parametrize("stop_reason", ["error", "aborted"])
+def test_parse_output_surfaces_provider_error(stop_reason):
     output = json.dumps(
         {
             "type": "message_end",
             "message": {
                 "role": "assistant",
                 "content": [],
-                "stopReason": "error",
+                "stopReason": stop_reason,
                 "errorMessage": '401 [{"code":2009,"message":"Unauthorized"}]',
                 "usage": {"cost": {"total": 0}},
             },
@@ -141,14 +174,15 @@ def test_parse_output_surfaces_provider_error():
     assert result.total_cost == 0
 
 
-def test_run_agent_preserves_structured_provider_error_exit_code():
+@pytest.mark.parametrize("stop_reason", ["error", "aborted"])
+def test_run_agent_preserves_structured_provider_error_exit_code(stop_reason):
     output = json.dumps(
         {
             "type": "message_end",
             "message": {
                 "role": "assistant",
                 "content": [],
-                "stopReason": "error",
+                "stopReason": stop_reason,
                 "errorMessage": "provider unavailable",
             },
         }
@@ -162,6 +196,37 @@ def test_run_agent_preserves_structured_provider_error_exit_code():
 
     assert result.exit_code == 1
     assert result.result_message == "provider unavailable"
+
+
+@pytest.mark.parametrize("stop_reason", ["error", "aborted"])
+def test_parse_output_failure_fallback_and_recovery(stop_reason):
+    failed = json.dumps(
+        {
+            "type": "message_end",
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "text", "text": "partial"}],
+                "stopReason": stop_reason,
+            },
+        }
+    )
+    result = PiProvider().parse_output(failed)
+    assert result.exit_code == 1
+    assert result.result_message == f"Pi request ended with {stop_reason}"
+
+    recovered = json.dumps(
+        {
+            "type": "message_end",
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "text", "text": "recovered"}],
+                "stopReason": "stop",
+            },
+        }
+    )
+    result = PiProvider().parse_output(failed + "\n" + recovered)
+    assert result.exit_code == 0
+    assert result.result_message == "recovered"
 
 
 def test_initial_log_entry_and_extract_result():

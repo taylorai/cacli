@@ -398,14 +398,21 @@ class FlowEngine:
                                     total_cost = (
                                         total_cost or 0.0
                                     ) + agent_result.total_cost
-                                if isinstance(response_text, str) and response_text:
+                                if agent_result.exit_code != 0:
+                                    final_error = response_text or (
+                                        f"provider exited {agent_result.exit_code}"
+                                    )
+                                    agent_result = None
+                                    response_text = ""
+                                elif isinstance(response_text, str) and response_text:
                                     break
-                                if (
+                                elif (
                                     schema is not None
                                     and agent_result.structured_output is not None
                                 ):
                                     break
-                                final_error = "provider returned no result"
+                                else:
+                                    final_error = "provider returned no result"
 
                         if exec_attempt < retries:
                             delay = self.retry_delays[
