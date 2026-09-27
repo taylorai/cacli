@@ -1,6 +1,6 @@
 # Local CLI capability report
 
-> **Historical snapshot (2026-07-11, pre-implementation).** The "cacli sandbox mapping today" column and gap notes describe the state BEFORE flow Phase 3 landed; the recommendations in this report have since been implemented (claude settings-based sandbox + --json-schema, cursor --sandbox mapping, codex --output-schema). See src/cacli/providers/ for current behavior.
+> **Historical snapshot (2026-07-11, pre-implementation).** The "cacli sandbox mapping today" column and gap notes describe the state BEFORE flow Phase 3 landed; the recommendations in this report have since been implemented (claude settings-based sandbox + --json-schema, cursor --sandbox mapping, codex --output-schema). See src/cacli/harnesses/ for current behavior.
 
 Research was limited to local binaries, help/config inspection, and cacli source. No agent sessions were launched and no files were modified.
 

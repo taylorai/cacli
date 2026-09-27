@@ -5,18 +5,20 @@ import shlex
 
 import pytest
 
-from cacli.providers import list_providers
+from cacli.harnesses import list_harnesses
 from cacli.runner import run_agent
 from cacli.types import ExecResult
-from cacli.providers.opencode import OPENCODE_DEFAULT_MODEL, OpenCodeProvider
+from cacli.harnesses.opencode import OpenCodeHarness
+
+OPENCODE_DEFAULT_MODEL = "@cf/zai-org/glm-5.3"
 
 
 def test_opencode_provider_is_registered():
-    assert "opencode" in list_providers()
+    assert "opencode" in list_harnesses()
 
 
-def test_build_command_defaults_to_glm_53_and_auto_approves():
-    command = OpenCodeProvider().build_command(
+def test_build_command_uses_headless_mode_and_auto_approves():
+    command = OpenCodeHarness().build_command(
         "fix the tests; echo not-a-command",
         sandbox=False,
     )
@@ -31,15 +33,13 @@ def test_build_command_defaults_to_glm_53_and_auto_approves():
         "--format",
         "json",
         "--auto",
-        "--model",
-        OPENCODE_DEFAULT_MODEL,
     ]
 
 
 def test_build_command_resolves_alias_and_forwards_variant_and_settings():
-    command = OpenCodeProvider().build_command(
+    command = OpenCodeHarness().build_command(
         "hello",
-        model="glm-5.3",
+        model=OPENCODE_DEFAULT_MODEL,
         reasoning_effort="high",
         settings="/tmp/open code.json",
     )
@@ -65,7 +65,7 @@ def test_build_command_resolves_alias_and_forwards_variant_and_settings():
 
 def test_build_command_preserves_qualified_models_and_omits_auto_variant():
     model = "togetherai/zai-org/GLM-5.3-Flash"
-    command = OpenCodeProvider().build_command(
+    command = OpenCodeHarness().build_command(
         "hello",
         model=model,
         reasoning_effort="auto",
@@ -78,7 +78,7 @@ def test_build_command_preserves_qualified_models_and_omits_auto_variant():
 
 def test_build_command_rejects_internal_sandbox():
     with pytest.raises(NotImplementedError, match="external sandboxing"):
-        OpenCodeProvider().build_command("hello", sandbox=True)
+        OpenCodeHarness().build_command("hello", sandbox=True)
 
 
 def test_parse_output_extracts_last_message_text_and_sums_costs():
@@ -123,7 +123,7 @@ def test_parse_output_extracts_last_message_text_and_sums_costs():
     events.extend([events[-2], events[-1]])
     raw_output = "not json\n" + "\n".join(json.dumps(event) for event in events)
 
-    result = OpenCodeProvider().parse_output(raw_output)
+    result = OpenCodeHarness().parse_output(raw_output)
 
     assert result.result_message == "Done.\nTests pass."
     assert result.total_cost == pytest.approx(0.5)
@@ -150,19 +150,21 @@ def test_parse_output_uses_error_when_no_text_and_tolerates_invalid_cost():
         ]
     )
 
-    result = OpenCodeProvider().parse_output(raw_output)
+    result = OpenCodeHarness().parse_output(raw_output)
 
     assert result.result_message == "quota exhausted"
     assert result.total_cost is None
 
 
 def test_initial_log_entry_extract_result_and_skills_dir():
-    provider = OpenCodeProvider()
-    initial = json.loads(provider.build_initial_log_entry("hello", "glm-5.3"))
+    provider = OpenCodeHarness()
+    initial = json.loads(
+        provider.build_initial_log_entry("hello", OPENCODE_DEFAULT_MODEL)
+    )
 
     assert initial == {
         "type": "user",
-        "provider": "opencode",
+        "harness": "opencode",
         "message": {"role": "user", "content": "hello"},
         "model": OPENCODE_DEFAULT_MODEL,
     }
@@ -183,7 +185,7 @@ def test_initial_log_entry_extract_result_and_skills_dir():
 
 
 def test_pr_description_command_uses_structured_headless_mode():
-    parts = shlex.split(OpenCodeProvider().build_pr_description_command("describe"))
+    parts = shlex.split(OpenCodeHarness().build_pr_description_command("describe"))
 
     assert parts[4:9] == ["opencode", "run", "--format", "json", "--auto"]
 
@@ -205,7 +207,7 @@ def test_prompt_stdin_preserves_literal_content_and_exit_status(tmp_path, prompt
     )
     executable.chmod(0o755)
     result = subprocess.run(
-        OpenCodeProvider().build_command(prompt, settings="/tmp/open code.json"),
+        OpenCodeHarness().build_command(prompt, settings="/tmp/open code.json"),
         shell=True,
         capture_output=True,
         text=True,
@@ -218,14 +220,14 @@ def test_prompt_stdin_preserves_literal_content_and_exit_status(tmp_path, prompt
 
 def test_disabling_web_search_warns():
     with pytest.warns(UserWarning, match="web_search=False.*ignored"):
-        OpenCodeProvider().build_command("test", web_search=False)
+        OpenCodeHarness().build_command("test", web_search=False)
 
 
 @pytest.mark.parametrize(
     "error,expected",
     [
         ({"data": {"message": "quota exhausted"}}, "quota exhausted"),
-        ({}, "OpenCode provider returned an error"),
+        ({}, "OpenCode harness returned an error"),
     ],
 )
 @pytest.mark.parametrize("process_exit", [0, 7])
@@ -240,10 +242,15 @@ def test_error_overrides_text_and_preserves_failure_and_cost(
         {"type": "text", "part": {"id": "p2", "messageID": "m1", "text": "late text"}},
     ]
     raw = "\n".join(json.dumps(event) for event in events)
-    parsed = OpenCodeProvider().parse_output(raw)
+    parsed = OpenCodeHarness().parse_output(raw)
     assert parsed.exit_code == 1
     assert parsed.result_message == expected
-    result = run_agent("opencode", "test", lambda *args: ExecResult(process_exit, raw))
+    result = run_agent(
+        "opencode",
+        "test",
+        lambda *args: ExecResult(process_exit, raw),
+        provider="claude-api",
+    )
     assert result.exit_code == (process_exit or 1)
     assert result.result_message == expected
     assert result.total_cost == pytest.approx(0.25)

@@ -65,7 +65,7 @@ class TranscriptApplyTests(unittest.TestCase):
 
             analysis = analyze_transcript(str(transcript), cwd=str(root))
 
-            self.assertEqual(analysis.provider, "claude")
+            self.assertEqual(analysis.harness, "claude")
             self.assertEqual(len(analysis.actions), 2)
             self.assertEqual(len(analysis.applicable_actions), 2)
             self.assertIsNone(analysis.blocker)
@@ -74,7 +74,9 @@ class TranscriptApplyTests(unittest.TestCase):
             patch_text = patch_path.read_text(encoding="utf-8")
             self.assertIn("hello.txt", patch_text)
             self.assertIn("new.txt", patch_text)
-            self.assertEqual((root / "hello.txt").read_text(encoding="utf-8"), "hello\n")
+            self.assertEqual(
+                (root / "hello.txt").read_text(encoding="utf-8"), "hello\n"
+            )
 
             apply_actions_to_disk(root, analysis.applicable_actions)
             self.assertEqual((root / "hello.txt").read_text(encoding="utf-8"), "hi\n")
@@ -113,7 +115,7 @@ class TranscriptApplyTests(unittest.TestCase):
             )
 
             analysis = analyze_transcript(
-                str(transcript), cwd=str(root), provider="codex"
+                str(transcript), cwd=str(root), harness="codex"
             )
 
             self.assertEqual(len(analysis.actions), 2)
@@ -154,7 +156,9 @@ class TranscriptApplyTests(unittest.TestCase):
                                 {
                                     "type": "tool_use",
                                     "name": "Bash",
-                                    "input": {"command": "sed -i 's/two/THREE/' data.txt"},
+                                    "input": {
+                                        "command": "sed -i 's/two/THREE/' data.txt"
+                                    },
                                 }
                             ]
                         },
@@ -219,14 +223,18 @@ class TranscriptApplyTests(unittest.TestCase):
             )
 
             analysis = analyze_transcript(
-                str(transcript), cwd=str(root), provider="codex"
+                str(transcript), cwd=str(root), harness="codex"
             )
             self.assertEqual(len(analysis.actions), 1)
             self.assertEqual(len(analysis.applicable_actions), 1)
             apply_actions_to_disk(root, analysis.applicable_actions)
-            self.assertEqual((root / "foo.txt").read_text(encoding="utf-8"), "goodbye\n")
+            self.assertEqual(
+                (root / "foo.txt").read_text(encoding="utf-8"), "goodbye\n"
+            )
 
-    def test_auto_apply_mode_applies_clean_prefix_and_returns_failure_on_blocker(self) -> None:
+    def test_auto_apply_mode_applies_clean_prefix_and_returns_failure_on_blocker(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "app.txt").write_text("alpha\n", encoding="utf-8")
@@ -257,7 +265,9 @@ class TranscriptApplyTests(unittest.TestCase):
                                 {
                                     "type": "tool_use",
                                     "name": "Bash",
-                                    "input": {"command": "sed -i 's/beta/gamma/' app.txt"},
+                                    "input": {
+                                        "command": "sed -i 's/beta/gamma/' app.txt"
+                                    },
                                 }
                             ]
                         },
@@ -285,7 +295,7 @@ class TranscriptApplyTests(unittest.TestCase):
                 SimpleNamespace(
                     transcript=str(transcript),
                     cwd=str(root),
-                    provider="auto",
+                    harness="auto",
                     mode="auto-apply",
                     patch_file=None,
                 )

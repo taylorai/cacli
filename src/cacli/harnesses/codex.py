@@ -1,13 +1,14 @@
-"""Codex/OpenAI provider."""
+"""Codex/OpenAI harness."""
 
 import json
 import shlex
+from pathlib import Path
+from typing import Sequence
 
-from cacli.providers.base import BaseProvider
+from cacli.harnesses.base import BaseHarness, Pairing
+from cacli.inference import PROVIDERS
 from cacli.types import AgentRunResult
 
-DEFAULT_MODEL = "gpt-5.4"
-DEFAULT_REASONING_EFFORT = "high"
 # workspace-write confines writes to the workspace at the OS level;
 # --no-sandbox falls back to danger-full-access (the old behavior, for
 # externally-sandboxed environments).
@@ -26,10 +27,59 @@ def _sandbox_args(sandbox: bool | None) -> str:
     )
 
 
-class CodexProvider(BaseProvider):
-    """Provider for Codex/OpenAI CLI."""
+class CodexHarness(BaseHarness):
+    """Harness for Codex/OpenAI CLI."""
 
     name = "codex"
+    pairings = (
+        Pairing(
+            "openai-sub",
+            credentials=("~/.codex/auth.json",),
+            default_model="gpt-5.4",
+            default_reasoning_effort="high",
+            unset_env=("OPENAI_API_KEY", "CODEX_API_KEY"),
+        ),
+        Pairing(
+            "openai-api",
+            credentials=("OPENAI_API_KEY",),
+            default_model="gpt-5.4",
+            default_reasoning_effort="high",
+        ),
+        Pairing(
+            "bedrock",
+            credentials=("AWS_BEARER_TOKEN_BEDROCK",),
+            requires_model=True,
+            verified=False,
+        ),
+        Pairing(
+            "workers-ai",
+            credentials=("CLOUDFLARE_API_KEY",),
+            requires_model=True,
+            verified=False,
+        ),
+    )
+
+    def configure_command(
+        self, pair: Pairing, command: str, params: dict[str, str]
+    ) -> str:
+        catalog = PROVIDERS[pair.provider]
+        if catalog.openai_base_url is None:
+            return command
+        ident = pair.provider.replace("-", "_")
+        env_key = catalog.credentials[0].env
+        values = {
+            "model_provider": ident,
+            f"model_providers.{ident}.name": pair.provider,
+            f"model_providers.{ident}.base_url": catalog.openai_base_url.format(
+                **params
+            ),
+            f"model_providers.{ident}.env_key": env_key,
+            f"model_providers.{ident}.wire_api": "responses",
+        }
+        return command + "".join(
+            f" --config {shlex.quote(f'{key}={value}')}"
+            for key, value in values.items()
+        )
 
     def build_command(
         self,
@@ -39,19 +89,18 @@ class CodexProvider(BaseProvider):
         web_search: bool = True,
         settings: str | None = None,
         sandbox: bool | None = None,
-        output_schema: dict | None = None,
+        output_schema: dict | Path | None = None,
+        exec_prefix: Sequence[str] = (),
     ) -> str:
         safe_prompt = shlex.quote(prompt)
         cmd = (
-            f"codex exec {safe_prompt} {_sandbox_args(sandbox)}"
+            f"{self.command_head('codex', exec_prefix)} exec {safe_prompt} {_sandbox_args(sandbox)}"
             " --json --skip-git-repo-check"
         )
-        if model is None:
-            model = DEFAULT_MODEL
-        cmd += f" --model {shlex.quote(model)}"
-        if reasoning_effort is None:
-            reasoning_effort = DEFAULT_REASONING_EFFORT
-        cmd += f" --config model_reasoning_effort={shlex.quote(reasoning_effort)}"
+        if model is not None:
+            cmd += f" --model {shlex.quote(model)}"
+        if reasoning_effort is not None:
+            cmd += f" --config model_reasoning_effort={shlex.quote(reasoning_effort)}"
 
         if web_search:
             cmd += " --config features.web_search_request=true"
@@ -93,10 +142,11 @@ class CodexProvider(BaseProvider):
         model: str | None = None,
         settings: str | None = None,
         sandbox: bool | None = None,
+        exec_prefix: Sequence[str] = (),
     ) -> str:
         safe_prompt = shlex.quote(prompt)
         cmd = (
-            f"codex exec {safe_prompt} {_sandbox_args(sandbox)}"
+            f"{self.command_head('codex', exec_prefix)} exec {safe_prompt} {_sandbox_args(sandbox)}"
             " --json --skip-git-repo-check"
         )
         if model:

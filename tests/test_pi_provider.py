@@ -5,8 +5,8 @@ import subprocess
 
 import pytest
 
-from cacli.providers import list_providers
-from cacli.providers.pi import PiProvider
+from cacli.harnesses import list_harnesses
+from cacli.harnesses.pi import PiHarness
 from cacli.runner import run_agent
 from cacli.types import ExecResult
 
@@ -15,11 +15,11 @@ MODEL = "cloudflare-ai-gateway/workers-ai/@cf/zai-org/glm-5.3"
 
 
 def test_pi_provider_is_registered():
-    assert "pi" in list_providers()
+    assert "pi" in list_harnesses()
 
 
 def test_build_command_uses_safe_headless_mode_and_qualified_model():
-    command = PiProvider().build_command(
+    command = PiHarness().build_command(
         "fix the tests; echo not-a-command",
         model=MODEL,
         reasoning_effort="high",
@@ -60,7 +60,7 @@ def test_build_command_delivers_literal_prompt_on_stdin(tmp_path, prompt):
     pi.write_text("#!/bin/sh\ncat\nexit 7\n")
     pi.chmod(0o755)
     result = subprocess.run(
-        PiProvider().build_command(prompt),
+        PiHarness().build_command(prompt),
         shell=True,
         capture_output=True,
         text=True,
@@ -72,14 +72,14 @@ def test_build_command_delivers_literal_prompt_on_stdin(tmp_path, prompt):
 
 
 def test_build_command_omits_optional_model_and_auto_thinking():
-    parts = shlex.split(PiProvider().build_command("hello", reasoning_effort="auto"))
+    parts = shlex.split(PiHarness().build_command("hello", reasoning_effort="auto"))
 
     assert "--model" not in parts
     assert "--thinking" not in parts
 
 
 def test_build_command_rejects_internal_sandbox_and_settings():
-    provider = PiProvider()
+    provider = PiHarness()
 
     with pytest.raises(NotImplementedError, match="external sandboxing"):
         provider.build_command("hello", sandbox=True)
@@ -123,7 +123,7 @@ def test_parse_output_extracts_last_assistant_text_and_sums_costs():
     ]
     raw_output = "not json\n" + "\n".join(json.dumps(event) for event in events)
 
-    result = PiProvider().parse_output(raw_output)
+    result = PiHarness().parse_output(raw_output)
 
     assert result.result_message == "Done.\nTests pass."
     assert result.total_cost == pytest.approx(0.5)
@@ -146,7 +146,7 @@ def test_parse_output_tolerates_missing_or_invalid_cost():
         ]
     )
 
-    result = PiProvider().parse_output(raw_output)
+    result = PiHarness().parse_output(raw_output)
 
     assert result.result_message == "Done"
     assert result.total_cost is None
@@ -167,7 +167,7 @@ def test_parse_output_surfaces_provider_error(stop_reason):
         }
     )
 
-    result = PiProvider().parse_output(output)
+    result = PiHarness().parse_output(output)
 
     assert result.exit_code == 1
     assert result.result_message == '401 [{"code":2009,"message":"Unauthorized"}]'
@@ -189,7 +189,8 @@ def test_run_agent_preserves_structured_provider_error_exit_code(stop_reason):
     )
 
     result = run_agent(
-        provider="pi",
+        harness="pi",
+        provider="claude-api",
         prompt="hello",
         exec_fn=lambda *_args: ExecResult(exit_code=0, stdout=output),
     )
@@ -210,7 +211,7 @@ def test_parse_output_failure_fallback_and_recovery(stop_reason):
             },
         }
     )
-    result = PiProvider().parse_output(failed)
+    result = PiHarness().parse_output(failed)
     assert result.exit_code == 1
     assert result.result_message == f"Pi request ended with {stop_reason}"
 
@@ -224,18 +225,18 @@ def test_parse_output_failure_fallback_and_recovery(stop_reason):
             },
         }
     )
-    result = PiProvider().parse_output(failed + "\n" + recovered)
+    result = PiHarness().parse_output(failed + "\n" + recovered)
     assert result.exit_code == 0
     assert result.result_message == "recovered"
 
 
 def test_initial_log_entry_and_extract_result():
-    provider = PiProvider()
+    provider = PiHarness()
     initial = json.loads(provider.build_initial_log_entry("hello", MODEL))
 
     assert initial == {
         "type": "user",
-        "provider": "pi",
+        "harness": "pi",
         "message": {"role": "user", "content": "hello"},
         "model": MODEL,
     }

@@ -60,7 +60,7 @@ export default function SessionList({ sessions, selectedId, onSelect }: {
               <div className="flex-1 min-w-0">
                 <div className="mono text-xs text-[var(--text)] truncate">{clipped}</div>
                 <div className="flex items-center gap-2 mt-1">
-                  <span className="mono text-[10px] text-[var(--text-dim)]">{session.provider}</span>
+                  <span className="mono text-[10px] text-[var(--text-dim)]">{session.harness}</span>
                   {session.model && <span className="mono text-[10px] text-[var(--text-dim)]">{session.model}</span>}
                   <span className="mono text-[10px] text-[var(--text-dim)]">{formatRuntime(session)}</span>
                   <span className="mono text-[10px] text-[var(--text-dim)] ml-auto">{formatTime(session.start_time)}</span>

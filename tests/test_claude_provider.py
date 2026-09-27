@@ -3,11 +3,11 @@ import shlex
 
 import pytest
 
-from cacli.providers.claude import ClaudeProvider
+from cacli.harnesses.claude import ClaudeHarness
 
 
 def test_resolve_model_expands_claude_version_aliases():
-    provider = ClaudeProvider()
+    provider = ClaudeHarness()
 
     assert provider.resolve_model("fable-5") == "claude-fable-5"
     assert provider.resolve_model("opus-4.8") == "claude-opus-4-8"
@@ -16,7 +16,7 @@ def test_resolve_model_expands_claude_version_aliases():
 
 
 def test_resolve_model_preserves_claude_aliases_and_provider_ids():
-    provider = ClaudeProvider()
+    provider = ClaudeHarness()
 
     assert provider.resolve_model("fable") == "fable"
     assert provider.resolve_model("opus") == "opus"
@@ -27,7 +27,7 @@ def test_resolve_model_preserves_claude_aliases_and_provider_ids():
 
 
 def test_build_command_uses_resolved_model():
-    provider = ClaudeProvider()
+    provider = ClaudeHarness()
 
     cmd = provider.build_command("hello", model=provider.resolve_model("opus-4.8"))
 
@@ -35,7 +35,7 @@ def test_build_command_uses_resolved_model():
 
 
 def test_build_command_maps_schema_and_sandbox_settings():
-    provider = ClaudeProvider()
+    provider = ClaudeHarness()
     schema = {"type": "object", "required": ["answer"]}
     command = provider.build_command("hello", output_schema=schema, sandbox=True)
     parts = shlex.split(command)
@@ -58,7 +58,7 @@ def test_build_command_maps_schema_and_sandbox_settings():
 
 
 def test_parse_output_extracts_structured_output():
-    result = ClaudeProvider().parse_output(
+    result = ClaudeHarness().parse_output(
         json.dumps(
             {
                 "type": "result",

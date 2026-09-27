@@ -6,8 +6,9 @@ import os
 import subprocess
 import sys
 
-from cacli.providers import list_providers
-from cacli.runner import build_command, run_agent
+from cacli.harnesses import list_harnesses
+from cacli.inference import PROVIDERS
+from cacli.runner import build_launch, check_credentials, run_agent
 from cacli.transcript_apply import TranscriptApplyError, run_transcript_apply
 from cacli.types import ExecResult
 
@@ -64,12 +65,12 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     """Add arguments shared between run and spawn."""
     parser.add_argument("prompt", help="The task prompt")
     parser.add_argument(
-        "--provider",
-        "-p",
+        "--harness",
         default="claude",
-        choices=list_providers(),
-        help="Agent provider (default: claude)",
+        choices=list_harnesses(),
+        help="Agent CLI harness (default: claude)",
     )
+    parser.add_argument("--provider", "-p", default=None, choices=sorted(PROVIDERS))
     parser.add_argument("--model", "-m", default=None, help="Model name")
     parser.add_argument(
         "--reasoning-effort",
@@ -110,23 +111,35 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _provider_params() -> dict[str, str]:
+    return {
+        "region": os.environ.get("AWS_REGION", ""),
+        "account_id": os.environ.get("CLOUDFLARE_ACCOUNT_ID", ""),
+    }
+
+
 def _run_command(args) -> None:
     """Handle 'cacli run' — synchronous agent execution."""
+    launch = build_launch(
+        args.harness,
+        args.prompt,
+        provider=args.provider,
+        model=args.model,
+        params=_provider_params(),
+        reasoning_effort=args.reasoning_effort,
+        web_search=args.web_search,
+        settings=args.settings,
+        sandbox=args.sandbox,
+    )
     if args.command_only:
-        cmd = build_command(
-            args.provider,
-            args.prompt,
-            model=args.model,
-            reasoning_effort=args.reasoning_effort,
-            web_search=args.web_search,
-            settings=args.settings,
-            sandbox=args.sandbox,
-        )
-        print(cmd)
+        print(launch.command)
         return
+    check_credentials(launch)
 
     result = run_agent(
+        harness=args.harness,
         provider=args.provider,
+        params=_provider_params(),
         prompt=args.prompt,
         exec_fn=subprocess_exec,
         model=args.model,
@@ -147,6 +160,7 @@ def _run_command(args) -> None:
                     "exit_code": result.exit_code,
                     "result_message": result.result_message,
                     "total_cost": result.total_cost,
+                    "harness": result.harness,
                     "provider": result.provider,
                     "model": result.model,
                     "command": result.command,
@@ -210,7 +224,7 @@ def _apply_transcript_command(args) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="cacli",
-        description="Run coding agents (provider-agnostic)",
+        description="Run coding agent harnesses with inference providers",
     )
     subparsers = parser.add_subparsers(dest="command")
 
@@ -281,10 +295,10 @@ def main() -> None:
         help="Replay mode (default: generate-patch)",
     )
     apply_parser.add_argument(
-        "--provider",
+        "--harness",
         default="auto",
         choices=["auto", "claude", "codex"],
-        help="Transcript provider (default: auto-detect)",
+        help="Transcript harness (default: auto-detect)",
     )
     apply_parser.add_argument(
         "--patch-file",
@@ -299,9 +313,15 @@ def main() -> None:
         parser.print_help()
         sys.exit(1)
     elif args.command == "run":
-        _run_command(args)
+        try:
+            _run_command(args)
+        except ValueError as exc:
+            parser.exit(2, f"Error: {exc}\n")
     elif args.command == "spawn":
-        _spawn_command(args)
+        try:
+            _spawn_command(args)
+        except ValueError as exc:
+            parser.exit(2, f"Error: {exc}\n")
     elif args.command == "status":
         _status_command(args)
     elif args.command == "dashboard":

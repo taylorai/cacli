@@ -10,12 +10,13 @@ from cacli.flow import FlowBudgetExceeded, run_flow
 from cacli.flow.aexec import AsyncExecResult
 from cacli.flow.journal import JournalKeyChain, canonical_json, read_journal
 from cacli.flow.runs import show_run
-from cacli.providers import _PROVIDERS
-from cacli.providers.base import BaseProvider
+from cacli.harnesses import _HARNESSES
+from cacli.harnesses.base import BaseHarness, Pairing
 from cacli.types import AgentRunResult
 
 
-class FakeProvider(BaseProvider):
+class FakeHarness(BaseHarness):
+    pairings = (Pairing("openai-api"),)
     name = "fake"
 
     def build_command(
@@ -27,6 +28,7 @@ class FakeProvider(BaseProvider):
         settings=None,
         sandbox=None,
         output_schema=None,
+        exec_prefix=(),
     ):
         prompt = prompt.split("\n\n[Workflow note]", 1)[0]
         payload = json.dumps({"result": f"fake:{prompt}", "cost": 0.25})
@@ -42,7 +44,7 @@ class FakeProvider(BaseProvider):
         return prompt
 
     def build_pr_description_command(
-        self, prompt, model=None, settings=None, sandbox=None
+        self, prompt, model=None, settings=None, sandbox=None, exec_prefix=()
     ):
         return self.build_command(prompt, model=model)
 
@@ -52,7 +54,7 @@ class FakeProvider(BaseProvider):
 
 @pytest.fixture(autouse=True)
 def fake_provider(monkeypatch):
-    monkeypatch.setitem(_PROVIDERS, "fake", FakeProvider())
+    monkeypatch.setitem(_HARNESSES, "fake", FakeHarness())
 
 
 def run(coro):
@@ -98,7 +100,7 @@ def test_key_chain_canonical_and_order_sensitive():
 
 def test_parallel_key_assignment_is_completion_order_independent(tmp_path):
     source = """
-META={"default_provider":"fake"}
+META={"default_harness":"fake"}
 async def main():
     return await parallel([lambda i=i: agent(str(i), retries=0) for i in range(5)])
 """
@@ -132,13 +134,13 @@ def test_labels_phases_and_engine_note_do_not_change_keys(tmp_path, monkeypatch)
 
     scripts = [
         """
-META={"default_provider":"fake"}
+META={"default_harness":"fake"}
 async def main():
     phase("one")
     return await agent("same prompt", label="old", retries=0)
 """,
         """
-META={"default_provider":"fake"}
+META={"default_harness":"fake"}
 async def main():
     phase("two")
     return await agent("same prompt", label="new", phase="three", retries=0)
@@ -170,7 +172,7 @@ async def main():
 def test_execution_options_bust_resume_cache(tmp_path, old_option, new_option):
     def source(option):
         return f"""\
-META={{"default_provider":"fake"}}
+META={{"default_harness":"fake"}}
 async def main():
     return await agent("same prompt", {option})
 """
@@ -203,7 +205,7 @@ async def main():
 
 def test_relative_cwd_keys_are_checkout_portable(tmp_path):
     source = """
-META={"default_provider":"fake"}
+META={"default_harness":"fake"}
 async def main():
     return await agent("same", cwd="sub", retries=0)
 """
@@ -226,7 +228,7 @@ async def main():
 
 def test_full_resume_replays_without_exec_and_records_meta(tmp_path):
     source = """
-META={"default_provider":"fake"}
+META={"default_harness":"fake"}
 async def main():
     return [await agent("a", retries=0), await agent("b", retries=0)]
 """
@@ -260,7 +262,7 @@ async def main():
 
 def test_resume_replays_prefix_then_permanently_diverges(tmp_path):
     original_source = """
-META={"default_provider":"fake"}
+META={"default_harness":"fake"}
 async def main():
     return [await agent("a", retries=0), await agent("b", retries=0), await agent("c", retries=0)]
 """
@@ -300,7 +302,7 @@ async def main():
 def test_cached_terminal_none_replays_without_rerun(tmp_path):
     script = write_flow(
         tmp_path / "flow.py",
-        'META={"default_provider":"fake"}\nasync def main():\n    return await agent("x", retries=0)',
+        'META={"default_harness":"fake"}\nasync def main():\n    return await agent("x", retries=0)',
     )
 
     async def fail(*args, **kwargs):
@@ -332,7 +334,7 @@ def test_cached_terminal_none_replays_without_rerun(tmp_path):
 def test_incomplete_started_entry_respawns(tmp_path):
     script = write_flow(
         tmp_path / "flow.py",
-        'META={"default_provider":"fake"}\nasync def main():\n    return await agent("x", retries=0)',
+        'META={"default_harness":"fake"}\nasync def main():\n    return await agent("x", retries=0)',
     )
     original = run(
         run_flow(
@@ -364,7 +366,7 @@ def test_incomplete_started_entry_respawns(tmp_path):
 
 def test_estimated_cost_and_sandbox_budget_functions(tmp_path):
     source = """
-META={"default_provider":"fake", "budget":0.5}
+META={"default_harness":"fake", "budget":0.5}
 async def main():
     before = [budget_total(), budget_spent(), budget_remaining()]
     await agent("x", retries=0)
@@ -399,7 +401,7 @@ async def main():
     outcome = run(
         run_flow(
             write_flow(tmp_path / "flow.py", source),
-            provider="fake",
+            harness="fake",
             runs_root=tmp_path / "runs",
         )
     )
@@ -408,7 +410,7 @@ async def main():
 
 def test_budget_trips_on_next_call_and_resume_with_higher_budget(tmp_path):
     source = """
-META={"default_provider":"fake"}
+META={"default_harness":"fake"}
 async def main():
     return [await agent("a", retries=0), await agent("b", retries=0)]
 """
@@ -449,7 +451,7 @@ async def main():
 
 def test_parallel_inflight_results_survive_budget_overshoot(tmp_path):
     source = """
-META={"default_provider":"fake"}
+META={"default_harness":"fake"}
 async def main():
     await parallel([lambda: agent("a", retries=0), lambda: agent("b", retries=0)])
     return await agent("after", retries=0)
@@ -470,7 +472,7 @@ async def main():
 
 def test_queued_parallel_agents_recheck_budget_before_exec(tmp_path):
     source = """
-META={"default_provider":"fake", "concurrency":1}
+META={"default_harness":"fake", "concurrency":1}
 async def main():
     return await parallel([
         lambda i=i: agent(str(i), retries=0) for i in range(5)
@@ -497,7 +499,7 @@ def test_replayed_cost_counts_toward_budget(tmp_path):
     script = write_flow(
         tmp_path / "flow.py",
         """
-META={"default_provider":"fake"}
+META={"default_harness":"fake"}
 async def main():
     return [await agent("a", retries=0), await agent("b", retries=0)]
 """,
@@ -529,7 +531,7 @@ def test_cli_warns_when_resume_args_differ(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("HOME", str(home))
     script = write_flow(
         tmp_path / "flow.py",
-        'async def main():\n    return await agent("same", provider="fake", retries=0)',
+        'async def main():\n    return await agent("same", harness="fake", retries=0)',
     )
     original = run(run_flow(script, args={"value": 1}))
     monkeypatch.setattr(
@@ -562,8 +564,8 @@ def test_cli_budget_exceeded_then_resume_higher_from_cached_prefix(
         """
 async def main():
     return [
-        await agent("first", provider="fake", retries=0),
-        await agent("second", provider="fake", retries=0),
+        await agent("first", harness="fake", retries=0),
+        await agent("second", harness="fake", retries=0),
     ]
 """,
     )

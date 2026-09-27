@@ -89,7 +89,7 @@ export default function SessionDetail({ session, onKill, onDelete }: {
                 {status.label}
                 {session.status === 'running' && <Loader2 className="inline w-3 h-3 ml-1 animate-spin" />}
               </span>
-              <span className="mono text-[11px] text-[var(--text-dim)]">{session.provider}</span>
+              <span className="mono text-[11px] text-[var(--text-dim)]">{session.harness}</span>
               {session.model && <span className="mono text-[11px] text-[var(--text-dim)]">{session.model}</span>}
               <span className="mono text-[11px] text-[var(--text-dim)]">{formatDuration(session)}</span>
               <span className="mono text-[10px] text-[var(--text-dim)]">{session.id}</span>

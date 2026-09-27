@@ -1,10 +1,12 @@
-"""Claude Code provider."""
+"""Claude Code harness."""
 
 import json
 import re
 import shlex
+from pathlib import Path
+from typing import Sequence
 
-from cacli.providers.base import BaseProvider
+from cacli.harnesses.base import BaseHarness, Pairing
 from cacli.types import AgentRunResult
 
 
@@ -60,10 +62,38 @@ def _settings_args(settings: str | None, sandbox: bool | None) -> str:
     return f" --settings {shlex.quote(encoded)}"
 
 
-class ClaudeProvider(BaseProvider):
-    """Provider for the Claude Code CLI."""
+class ClaudeHarness(BaseHarness):
+    """Harness for the Claude Code CLI."""
 
     name = "claude"
+    pairings = (
+        Pairing(
+            "claude-sub",
+            credentials=("CLAUDE_CODE_OAUTH_TOKEN",),
+            unset_env=(
+                "ANTHROPIC_API_KEY",
+                "ANTHROPIC_AUTH_TOKEN",
+                "ANTHROPIC_BASE_URL",
+                "CLAUDE_CODE_USE_BEDROCK",
+            ),
+        ),
+        Pairing(
+            "claude-api",
+            credentials=("ANTHROPIC_API_KEY",),
+            unset_env=(
+                "CLAUDE_CODE_OAUTH_TOKEN",
+                "ANTHROPIC_AUTH_TOKEN",
+                "ANTHROPIC_BASE_URL",
+                "CLAUDE_CODE_USE_BEDROCK",
+            ),
+        ),
+        Pairing(
+            "bedrock",
+            credentials=("AWS_BEARER_TOKEN_BEDROCK",),
+            env=(("CLAUDE_CODE_USE_BEDROCK", "1"), ("AWS_REGION", "{region}")),
+            unset_env=("ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"),
+        ),
+    )
 
     def resolve_model(self, model: str | None) -> str | None:
         if not model:
@@ -81,10 +111,11 @@ class ClaudeProvider(BaseProvider):
         web_search: bool = True,
         settings: str | None = None,
         sandbox: bool | None = None,
-        output_schema: dict | None = None,
+        output_schema: dict | Path | None = None,
+        exec_prefix: Sequence[str] = (),
     ) -> str:
         safe_prompt = shlex.quote(prompt)
-        cmd = f"claude -p {safe_prompt} --verbose --output-format=stream-json"
+        cmd = f"{self.command_head('claude', exec_prefix)} -p {safe_prompt} --verbose --output-format=stream-json"
         if model:
             cmd += f" --model {shlex.quote(model)}"
         if reasoning_effort is not None:
@@ -149,9 +180,10 @@ class ClaudeProvider(BaseProvider):
         model: str | None = None,
         settings: str | None = None,
         sandbox: bool | None = None,
+        exec_prefix: Sequence[str] = (),
     ) -> str:
         safe_prompt = shlex.quote(prompt)
-        cmd = f"claude -p {safe_prompt} --verbose --output-format json"
+        cmd = f"{self.command_head('claude', exec_prefix)} -p {safe_prompt} --verbose --output-format json"
         if model:
             cmd += f" --model {shlex.quote(model)}"
         cmd += _settings_args(settings, sandbox)

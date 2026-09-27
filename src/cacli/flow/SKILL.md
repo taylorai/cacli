@@ -1,12 +1,12 @@
 ---
 name: cacli-flow
-description: Orchestrate multiple coding agents (claude, codex, devin, cursor, gemini, opencode, pi) from one sandboxed Python workflow script via `cacli flow`. Use when a task calls for fanning out agent calls in parallel, cross-vendor review/verification panels, racing providers, structured JSON output from agents, budget-capped agent loops, or resumable multi-agent pipelines. Triggers: "workflow", "fan out", "run agents in parallel", "cross-review", "judge panel", "cacli flow".
+description: Orchestrate multiple coding agents (claude, codex, devin, cursor, opencode, pi) from one sandboxed Python workflow script via `cacli flow`. Use when a task calls for fanning out agent calls in parallel, cross-vendor review/verification panels, racing providers, structured JSON output from agents, budget-capped agent loops, or resumable multi-agent pipelines. Triggers: "workflow", "fan out", "run agents in parallel", "cross-review", "judge panel", "cacli flow".
 ---
 
-# cacli flow: cross-provider agent workflows
+# cacli flow: cross-harness agent workflows
 
 `cacli flow run <script.py>` executes a Python-flavored workflow script that
-orchestrates coding-agent subprocesses across providers. The script runs in a
+orchestrates coding-agent subprocesses across harnesses and inference providers. The script runs in a
 locked-down interpreter sandbox (Monty): no imports beyond a fixed builtin set,
 no filesystem/network/env/subprocess access. All side effects go through the
 injected functions below — the agents you spawn run with normal permissions;
@@ -21,21 +21,33 @@ META = {"name": "cross-review", "description": "cross-vendor review"}
 FINDINGS = {
     "type": "object",
     "required": ["findings"],
-    "properties": {"findings": {"type": "array", "items": {
-        "type": "object", "required": ["file", "summary"],
-        "properties": {"file": {"type": "string"}, "summary": {"type": "string"}},
-    }}},
+    "properties": {
+        "findings": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["file", "summary"],
+                "properties": {
+                    "file": {"type": "string"},
+                    "summary": {"type": "string"},
+                },
+            },
+        }
+    },
 }
+
 
 async def main():
     phase("Find")
-    rounds = await parallel([
-        lambda p=p, prov=prov: agent(p, provider=prov, schema=FINDINGS)
-        for p, prov in [
-            ("find correctness bugs in the uncommitted diff", "codex"),
-            ("find security issues in the uncommitted diff", "claude"),
+    rounds = await parallel(
+        [
+            lambda p=p, prov=prov: agent(p, harness=prov, schema=FINDINGS)
+            for p, prov in [
+                ("find correctness bugs in the uncommitted diff", "codex"),
+                ("find security issues in the uncommitted diff", "claude"),
+            ]
         ]
-    ])
+    )
     findings = [f for r in rounds if r for f in r["findings"]]
 
     phase("Verify")
@@ -43,9 +55,12 @@ async def main():
         findings,
         lambda f, *_: agent(
             f"Try to REFUTE this finding, answer refuted true/false: {f}",
-            provider="codex",
-            schema={"type": "object", "required": ["refuted"],
-                    "properties": {"refuted": {"type": "boolean"}}},
+            harness="codex",
+            schema={
+                "type": "object",
+                "required": ["refuted"],
+                "properties": {"refuted": {"type": "boolean"}},
+            },
         ),
     )
     confirmed = [f for f, v in zip(findings, verdicts) if v and not v["refuted"]]
@@ -62,7 +77,7 @@ cacli flow run review_flow.py --args '{"pr": 42}'   # available as flow_args
 
 - Define `META = {...}` as a **literal dict** at top level (extracted without
   executing the script). Keys: `name`, `description`, optional `phases` (display
-  only), `default_provider`, `budget`, `concurrency`, `max_agents`.
+  only), `default_harness`, `default_provider`, `budget`, `concurrency`, `max_agents`.
 - Define `async def main():`. Its return value must be JSON-encodable (tuples
   become lists; sets/bytes are rejected) and is written to `result.json`.
 - Everything else is plain Python within the sandbox subset (below).
@@ -71,14 +86,15 @@ cacli flow run review_flow.py --args '{"pr": 42}'   # available as flow_args
 
 ### `agent(prompt, **kwargs) -> str | dict | list | None`
 
-Spawns one provider CLI subprocess. **Eager**: the agent starts the moment you
+Spawns one harness CLI subprocess. **Eager**: the agent starts the moment you
 call `agent(...)` — awaiting later just collects the result, so
 `t1 = agent(...); t2 = agent(...); await t1; await t2` runs both concurrently.
 All arguments after `prompt` are keyword-only.
 
 | kwarg | default | meaning |
 |---|---|---|
-| `provider` | flow default (`--provider` / `META["default_provider"]` / `"claude"`) | any registered provider: `"claude"`, `"codex"`, `"openai"`, `"devin"`, `"cursor"`, `"gemini"`, `"opencode"`, `"pi"` |
+| `harness` | flow default (`--harness` / `META["default_harness"]` / `"claude"`) | `"claude"`, `"codex"`, `"devin"`, `"cursor"`, `"opencode"`, `"pi"` |
+| `provider` | harness default (or `--provider` / `META["default_provider"]`) | inference endpoint and account; supported choices depend on the harness |
 | `model` | provider default | provider model aliases accepted |
 | `effort` | None | `"low"`/`"medium"`/`"high"`/`"xhigh"`/`"max"` where supported |
 | `schema` | None | JSON Schema dict (top-level `type` must be `"object"` or `"array"`, ≤100KB); returns a validated dict/list instead of str (see Structured output) |
@@ -89,7 +105,7 @@ All arguments after `prompt` are keyword-only.
 | `stall_timeout` | 300 | kill+retry if no output for this many seconds |
 | `retries` | 2 | retries for process failure (exit/timeout/unparseable) |
 | `schema_retries` | 2 | extra fresh-call retries when output fails schema validation |
-| `sandbox` | None | `True` = force OS sandbox, `False` = force off, `None` = provider default (codex/devin default sandboxed; claude/cursor use their own CLI defaults) |
+| `sandbox` | None | `True` = force OS sandbox, `False` = force off, `None` = harness default (codex/devin default sandboxed; claude/cursor use their own CLI defaults) |
 | `web_search` | True | allow the agent to search the web |
 | `env` | None | extra env vars (dict of str→str) |
 
@@ -138,9 +154,9 @@ finish and their results are preserved). There is also a lifetime agent cap
 ## Structured output (`schema=`)
 
 Pass a JSON Schema dict with top-level `"type": "object"` or `"array"`. The
-returned value is a validated dict/list. Implementation is per provider
+returned value is a validated dict/list. Implementation is per harness
 (native flags for claude/codex, prompt-enforcement for devin/cursor) but
-transparent to the script; all providers' outputs are validated host-side and
+transparent to the script; all harnesses' outputs are validated host-side and
 invalid responses are retried with the validation error fed back. After
 `schema_retries` exhaustion the call returns `None` (journaled as
 `schema_exhausted` with the last raw candidate).
@@ -175,7 +191,7 @@ cache hits will never match.
 ## CLI
 
 ```bash
-cacli flow run flow.py [--args JSON] [--budget 10.00] [--provider claude]
+cacli flow run flow.py [--args JSON] [--budget 10.00] [--harness claude] [--provider claude-api]
                        [--concurrency N] [--resume RUN_ID] [--cwd DIR]
 cacli flow runs               # list past runs: id, status, name, cost
 cacli flow show <run_id>      # meta, events, journal, result
@@ -189,7 +205,7 @@ Runs live in `~/.cacli/flows/<run_id>/` with per-agent raw logs under
 `--resume <run_id>` replays the longest unchanged prefix of agent calls from
 the previous run's journal (instant, no re-execution — though replayed costs
 still count against the resumed run's budget), then goes live at the first
-call whose identity differs. Identity includes prompt/provider/model/effort/
+call whose identity differs. Identity includes prompt/harness/provider/model/effort/
 schema/cwd plus the execution options `web_search`, `settings`, `sandbox`,
 `env`, `retries`, `schema_retries`, `timeout`, and `stall_timeout`. `label` and
 `phase` are display-only and deliberately excluded from resume identity.
@@ -207,5 +223,5 @@ early calls invalidates everything after them.
   findings refuted by a different vendor.
 - Route by task shape: frontend → claude, careful refactors → codex, bulk/cheap
   classification → a small model via `model=`.
-- Providers that don't report costs (subscription CLIs) contribute per-call
+- Harnesses that don't report costs (subscription CLIs) contribute per-call
   estimates to the budget, flagged in totals as estimated.

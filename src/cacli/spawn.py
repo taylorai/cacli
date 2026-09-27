@@ -6,7 +6,9 @@ import shutil
 import subprocess
 import time
 
-from cacli.runner import build_command, build_initial_log_entry
+from cacli.runner import build_launch, build_initial_log_entry
+from cacli.cli import _provider_params
+from cacli.runner import check_credentials
 from cacli.sessions import (
     SessionInfo,
     ensure_sessions_dir,
@@ -35,9 +37,11 @@ def spawn_agent(args) -> None:
     cwd = os.path.abspath(args.cwd)
 
     # Build agent command using existing provider abstraction
-    agent_cmd = build_command(
-        args.provider,
+    launch = build_launch(
+        args.harness,
         args.prompt,
+        provider=args.provider,
+        params=_provider_params(),
         model=args.model,
         reasoning_effort=getattr(args, "reasoning_effort", None),
         web_search=getattr(args, "web_search", True),
@@ -45,8 +49,11 @@ def spawn_agent(args) -> None:
         sandbox=getattr(args, "sandbox", None),
     )
 
+    check_credentials(launch)
+    agent_cmd = launch.command
+
     # Seed the log with the prompt — provider stream output doesn't echo it
-    initial_entry = build_initial_log_entry(args.provider, args.prompt, args.model)
+    initial_entry = build_initial_log_entry(args.harness, args.prompt, args.model)
     with open(log_file, "w") as f:
         f.write(initial_entry + "\n")
 
@@ -62,7 +69,8 @@ def spawn_agent(args) -> None:
     session = SessionInfo(
         id=session_id,
         prompt=args.prompt,
-        provider=args.provider,
+        harness=args.harness,
+        provider=launch.provider,
         model=args.model,
         status="running",
         start_time=time.time(),
@@ -96,9 +104,9 @@ def spawn_agent(args) -> None:
         raise SystemExit(1)
 
     print(f"Spawned session {session_id} (tmux: {tmux_name})")
-    if args.provider:
+    if args.harness:
         model_str = f" ({args.model})" if args.model else ""
-        print(f"  Provider: {args.provider}{model_str}")
+        print(f"  Harness: {args.harness}; provider: {launch.provider}{model_str}")
     print(f"  Log: {log_file}")
     print(f"  Attach: tmux attach -t {tmux_name}")
     print("  Status: cacli status")

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 from typing import Any, Awaitable, Callable
 
@@ -20,7 +21,8 @@ from cacli.flow.schema import (
     strictify,
     validate_output,
 )
-from cacli.providers import get_provider
+from cacli.harnesses import get_harness
+from cacli.runner import build_launch, check_credentials
 
 
 SleepFn = Callable[[float], Awaitable[None]]
@@ -104,7 +106,7 @@ class FlowEngine:
             )
 
     async def _backoff(self, delay: float) -> None:
-        sleep_task = asyncio.create_task(self.sleep(delay))
+        sleep_task = asyncio.ensure_future(self.sleep(delay))
         cancel_task = asyncio.create_task(self.cancel_event.wait())
         done, pending = await asyncio.wait(
             {sleep_task, cancel_task}, return_when=asyncio.FIRST_COMPLETED
@@ -190,7 +192,8 @@ class FlowEngine:
         self,
         prompt: str,
         *,
-        provider_name: str,
+        harness_name: str,
+        provider_name: str | None,
         model: str | None,
         effort: str | None,
         label: str,
@@ -210,11 +213,29 @@ class FlowEngine:
     ) -> Any | None:
         if self.cancel_event.is_set():
             raise RuntimeError("FlowCancelled: workflow cancelled")
-        provider = get_provider(provider_name)
-        resolved_model = provider.resolve_model(model)
+        launch = build_launch(
+            harness_name,
+            prompt,
+            provider=provider_name,
+            model=model,
+            params={
+                "region": (env or {}).get(
+                    "AWS_REGION", os.environ.get("AWS_REGION", "")
+                ),
+                "account_id": (env or {}).get(
+                    "CLOUDFLARE_ACCOUNT_ID", os.environ.get("CLOUDFLARE_ACCOUNT_ID", "")
+                ),
+            },
+        )
+        adapter = get_harness(harness_name)
+        if self.exec_fn is aexec:
+            check_credentials(launch, env)
+        provider_name = launch.provider
+        resolved_model = launch.model
         index, key, cached, respawning = await self._assign_call(
             {
                 "prompt": prompt,
+                "harness": harness_name,
                 "provider": provider_name,
                 "model": resolved_model,
                 "effort": effort,
@@ -235,6 +256,7 @@ class FlowEngine:
             "index": index,
             "key": key,
             "label": label,
+            "harness": harness_name,
             "provider": provider_name,
             "phase": phase,
         }
@@ -283,7 +305,7 @@ class FlowEngine:
         self._event("queued", **common)
         log_path = self.run.agent_log_path(index, label)
         log_path.touch()
-        tier = schema_tier(provider_name) if schema is not None else None
+        tier = schema_tier(harness_name) if schema is not None else None
         schema_path = None
         if tier == "native-file":
             schema_path = self.run.path / "agents" / f"{index:04d}.schema.json"
@@ -351,9 +373,20 @@ class FlowEngine:
                                 output_schema = schema
                             elif tier == "native-file":
                                 output_schema = schema_path
-                            command = provider.build_command(
-                                prompt=schema_prompt + FLOW_PROMPT_SUFFIX,
-                                model=resolved_model,
+                            attempt_launch = build_launch(
+                                harness_name,
+                                schema_prompt + FLOW_PROMPT_SUFFIX,
+                                provider=provider_name,
+                                model=model,
+                                params={
+                                    "region": (env or {}).get(
+                                        "AWS_REGION", os.environ.get("AWS_REGION", "")
+                                    ),
+                                    "account_id": (env or {}).get(
+                                        "CLOUDFLARE_ACCOUNT_ID",
+                                        os.environ.get("CLOUDFLARE_ACCOUNT_ID", ""),
+                                    ),
+                                },
                                 reasoning_effort=effort,
                                 web_search=web_search,
                                 settings=settings,
@@ -361,7 +394,7 @@ class FlowEngine:
                                 output_schema=output_schema,
                             )
                             exec_result = await self.exec_fn(
-                                command,
+                                attempt_launch.command,
                                 cwd,
                                 timeout,
                                 env,
@@ -389,7 +422,7 @@ class FlowEngine:
                             final_error = f"process exited {exec_result.exit_code}"
                         else:
                             try:
-                                agent_result = provider.parse_output(exec_result.stdout)
+                                agent_result = adapter.parse_output(exec_result.stdout)
                             except Exception as exc:
                                 final_error = f"output parse failed: {exc}"
                             else:
@@ -400,7 +433,7 @@ class FlowEngine:
                                     ) + agent_result.total_cost
                                 if agent_result.exit_code != 0:
                                     final_error = response_text or (
-                                        f"provider exited {agent_result.exit_code}"
+                                        f"harness exited {agent_result.exit_code}"
                                     )
                                     agent_result = None
                                     response_text = ""
@@ -412,7 +445,7 @@ class FlowEngine:
                                 ):
                                     break
                                 else:
-                                    final_error = "provider returned no result"
+                                    final_error = "harness returned no result"
 
                         if exec_attempt < retries:
                             delay = self.retry_delays[
@@ -473,12 +506,13 @@ class FlowEngine:
         duration_ms = int((time.monotonic() - started) * 1000)
         succeeded = final_result is not None
         cost_estimated = succeeded and total_cost is None
-        effective_cost = estimated_cost(provider_name) if cost_estimated else total_cost
+        effective_cost = estimated_cost(harness_name) if cost_estimated else total_cost
         entry = {
             "type": "result",
             "key": key,
             "index": index,
             "label": label,
+            "harness": harness_name,
             "provider": provider_name,
             "model": resolved_model,
             "result": final_result,

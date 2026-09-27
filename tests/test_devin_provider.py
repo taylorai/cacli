@@ -1,29 +1,29 @@
 import re
 
-from cacli.providers import list_providers
-from cacli.providers.devin import DevinProvider
+from cacli.harnesses import list_harnesses
+from cacli.harnesses.devin import DevinHarness
 
 
 def test_devin_provider_is_registered():
-    assert "devin" in list_providers()
+    assert "devin" in list_harnesses()
 
 
 def test_build_devin_command_defaults_to_sandboxed_print_mode():
-    provider = DevinProvider()
+    provider = DevinHarness()
     cmd = provider.build_devin_command("fix the tests")
 
     assert cmd == "devin --sandbox --permission-mode dangerous --print 'fix the tests'"
 
 
 def test_build_devin_command_sandbox_can_be_disabled():
-    provider = DevinProvider()
+    provider = DevinHarness()
     cmd = provider.build_devin_command("fix the tests", sandbox=False)
 
     assert cmd == "devin --permission-mode dangerous --print 'fix the tests'"
 
 
 def test_build_devin_command_forwards_model_and_config():
-    provider = DevinProvider()
+    provider = DevinHarness()
     cmd = provider.build_devin_command(
         "summarize",
         model="opus",
@@ -32,14 +32,13 @@ def test_build_devin_command_forwards_model_and_config():
     )
 
     assert (
-        cmd
-        == "devin --permission-mode dangerous --model opus "
+        cmd == "devin --permission-mode dangerous --model opus "
         "--config '/tmp/devin config.json' --print summarize"
     )
 
 
 def test_build_command_wraps_devin_with_stream_converter():
-    provider = DevinProvider()
+    provider = DevinHarness()
     cmd = provider.build_command("fix the tests")
 
     assert re.search(
@@ -50,7 +49,7 @@ def test_build_command_wraps_devin_with_stream_converter():
 
 
 def test_build_command_forwards_no_sandbox():
-    provider = DevinProvider()
+    provider = DevinHarness()
     cmd = provider.build_command("fix the tests", sandbox=False)
 
     assert " -- devin --permission-mode dangerous --print 'fix the tests'" in cmd
@@ -58,17 +57,16 @@ def test_build_command_forwards_no_sandbox():
 
 
 def test_build_pr_description_command_is_unwrapped():
-    provider = DevinProvider()
+    provider = DevinHarness()
     cmd = provider.build_pr_description_command("describe changes")
 
     assert (
-        cmd
-        == "devin --sandbox --permission-mode dangerous --print 'describe changes'"
+        cmd == "devin --sandbox --permission-mode dangerous --print 'describe changes'"
     )
 
 
 def test_parse_output_returns_plain_stdout():
-    provider = DevinProvider()
+    provider = DevinHarness()
 
     result = provider.parse_output("\nHere is the answer.\n")
 
@@ -76,7 +74,7 @@ def test_parse_output_returns_plain_stdout():
 
 
 def test_parse_output_accepts_json_result_shapes():
-    provider = DevinProvider()
+    provider = DevinHarness()
 
     result = provider.parse_output('{"type": "result", "result": "Done"}')
 
@@ -84,7 +82,7 @@ def test_parse_output_accepts_json_result_shapes():
 
 
 def test_parse_output_accepts_jsonl_message_shapes():
-    provider = DevinProvider()
+    provider = DevinHarness()
 
     result = provider.parse_output(
         '{"type": "status", "message": "Thinking"}\n'
@@ -95,7 +93,7 @@ def test_parse_output_accepts_jsonl_message_shapes():
 
 
 def test_parse_output_reads_stream_json_result_line():
-    provider = DevinProvider()
+    provider = DevinHarness()
 
     result = provider.parse_output(
         '{"type": "system", "subtype": "init", "provider": "devin"}\n'

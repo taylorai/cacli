@@ -1,4 +1,4 @@
-"""Devin CLI provider."""
+"""Devin CLI harness."""
 
 import json
 import shlex
@@ -7,9 +7,9 @@ import sys
 import tempfile
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
-from cacli.providers.base import BaseProvider
+from cacli.harnesses.base import BaseHarness, Pairing
 from cacli.types import AgentRunResult
 
 DEVIN_DEFAULT_PERMISSION_MODE = "dangerous"
@@ -31,10 +31,17 @@ def _stream_wrapper_prefix() -> str:
     return f"{shlex.quote(sys.executable)} -m cacli.devin_stream"
 
 
-class DevinProvider(BaseProvider):
-    """Provider for the Devin CLI."""
+class DevinHarness(BaseHarness):
+    """Harness for the Devin CLI."""
 
     name = "devin"
+    pairings = (
+        Pairing(
+            "devin",
+            credentials=("~/.local/share/devin/credentials.toml",),
+            verified=False,
+        ),
+    )
 
     def build_devin_command(
         self,
@@ -42,6 +49,7 @@ class DevinProvider(BaseProvider):
         model: str | None = None,
         settings: str | None = None,
         sandbox: bool | None = None,
+        exec_prefix: Sequence[str] = (),
     ) -> str:
         """Build the bare devin invocation (no trajectory streaming).
 
@@ -52,7 +60,7 @@ class DevinProvider(BaseProvider):
         if sandbox is None:
             sandbox = DEVIN_DEFAULT_SANDBOX
         safe_prompt = shlex.quote(prompt)
-        cmd = "devin"
+        cmd = self.command_head("devin", exec_prefix)
         if sandbox:
             cmd += " --sandbox"
         cmd += f" --permission-mode {DEVIN_DEFAULT_PERMISSION_MODE}"
@@ -71,13 +79,18 @@ class DevinProvider(BaseProvider):
         web_search: bool = True,
         settings: str | None = None,
         sandbox: bool | None = None,
-        output_schema: dict | None = None,
+        output_schema: dict | Path | None = None,
+        exec_prefix: Sequence[str] = (),
     ) -> str:
         # Devin's --print mode only writes the final answer to stdout, so the
         # command is wrapped with the devin-stream converter, which tails
         # Devin's ATIF --export file and emits Claude-style stream-json.
         devin_cmd = self.build_devin_command(
-            prompt, model=model, settings=settings, sandbox=sandbox
+            prompt,
+            model=model,
+            settings=settings,
+            sandbox=sandbox,
+            exec_prefix=exec_prefix,
         )
         export_path = str(
             Path(tempfile.gettempdir()) / f"cacli-devin-{uuid.uuid4().hex[:12]}.json"
@@ -92,7 +105,7 @@ class DevinProvider(BaseProvider):
 
     def build_initial_log_entry(self, prompt: str, model: str | None = None) -> str:
         # The devin-stream wrapper emits Claude-style stream-json, so the
-        # initial entry uses the same format as the Claude provider.
+        # initial entry uses the same format as the Claude harness.
         return json.dumps(
             {
                 "type": "user",
@@ -109,10 +122,15 @@ class DevinProvider(BaseProvider):
         model: str | None = None,
         settings: str | None = None,
         sandbox: bool | None = None,
+        exec_prefix: Sequence[str] = (),
     ) -> str:
         # Only the final text matters here, so skip the streaming wrapper.
         return self.build_devin_command(
-            prompt, model=model, settings=settings, sandbox=sandbox
+            prompt,
+            model=model,
+            settings=settings,
+            sandbox=sandbox,
+            exec_prefix=exec_prefix,
         )
 
     def extract_result_from_json(self, raw_output: str) -> str:

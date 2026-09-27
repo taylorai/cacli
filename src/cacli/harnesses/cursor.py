@@ -1,22 +1,29 @@
-"""Cursor provider."""
+"""Cursor harness."""
 
 import json
 import shlex
+from pathlib import Path
+from typing import Sequence
 
-from cacli.providers.base import BaseProvider
+from cacli.harnesses.base import BaseHarness, Pairing
 from cacli.types import AgentRunResult
 
-CURSOR_DEFAULT_MODEL = "composer-2.5"
 
-
-class CursorProvider(BaseProvider):
-    """Provider for Cursor Agent CLI."""
+class CursorHarness(BaseHarness):
+    """Harness for Cursor Agent CLI."""
 
     name = "cursor"
+    pairings = (
+        Pairing(
+            "cursor", credentials=("CURSOR_API_KEY",), default_model="composer-2.5"
+        ),
+    )
 
     def resolve_model(self, model: str | None) -> str:
         if not model:
-            return CURSOR_DEFAULT_MODEL
+            default = self.pairings[0].default_model
+            assert default is not None
+            return default
         return model
 
     def build_command(
@@ -27,11 +34,12 @@ class CursorProvider(BaseProvider):
         web_search: bool = True,
         settings: str | None = None,
         sandbox: bool | None = None,
-        output_schema: dict | None = None,
+        output_schema: dict | Path | None = None,
+        exec_prefix: Sequence[str] = (),
     ) -> str:
         resolved_model = self.resolve_model(model)
         safe_prompt = shlex.quote(prompt)
-        cmd = f"agent --print --output-format stream-json --force --model {shlex.quote(resolved_model)}"
+        cmd = f"{self.command_head('agent', exec_prefix)} --print --output-format stream-json --force --model {shlex.quote(resolved_model)}"
         if sandbox is not None:
             cmd += f" --sandbox {'enabled' if sandbox else 'disabled'}"
         cmd += f" {safe_prompt}"
@@ -76,10 +84,11 @@ class CursorProvider(BaseProvider):
         model: str | None = None,
         settings: str | None = None,
         sandbox: bool | None = None,
+        exec_prefix: Sequence[str] = (),
     ) -> str:
         resolved_model = self.resolve_model(model)
         safe_prompt = shlex.quote(prompt)
-        cmd = f"agent --print --output-format json --force --model {shlex.quote(resolved_model)}"
+        cmd = f"{self.command_head('agent', exec_prefix)} --print --output-format json --force --model {shlex.quote(resolved_model)}"
         if sandbox is not None:
             cmd += f" --sandbox {'enabled' if sandbox else 'disabled'}"
         cmd += f" {safe_prompt}"

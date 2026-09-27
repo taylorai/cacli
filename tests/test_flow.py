@@ -13,14 +13,16 @@ from cacli.cli import main as cli_main
 from cacli.flow import FlowCancelled, FlowRunFailed, run_flow
 from cacli.flow.aexec import AsyncExecResult, aexec
 from cacli.flow.host import FlowHost
+from cacli.flow.journal import read_journal
 from cacli.flow.runs import ResultEncodingError, normalize_json, show_run
 from cacli.flow.sandbox import FlowScriptError, execute, extract_meta
-from cacli.providers import _PROVIDERS
-from cacli.providers.base import BaseProvider
+from cacli.harnesses import _HARNESSES
+from cacli.harnesses.base import BaseHarness, Pairing
 from cacli.types import AgentRunResult
 
 
-class FakeProvider(BaseProvider):
+class FakeHarness(BaseHarness):
+    pairings = (Pairing("openai-api"),)
     name = "fake"
 
     def build_command(
@@ -32,6 +34,7 @@ class FakeProvider(BaseProvider):
         settings=None,
         sandbox=None,
         output_schema=None,
+        exec_prefix=(),
     ):
         prompt = prompt.split("\n\n[Workflow note]", 1)[0]
         if prompt == "fail":
@@ -54,7 +57,7 @@ class FakeProvider(BaseProvider):
         return prompt
 
     def build_pr_description_command(
-        self, prompt, model=None, settings=None, sandbox=None
+        self, prompt, model=None, settings=None, sandbox=None, exec_prefix=()
     ):
         return self.build_command(prompt, model=model)
 
@@ -64,7 +67,7 @@ class FakeProvider(BaseProvider):
 
 @pytest.fixture(autouse=True)
 def fake_provider(monkeypatch):
-    monkeypatch.setitem(_PROVIDERS, "fake", FakeProvider())
+    monkeypatch.setitem(_HARNESSES, "fake", FakeHarness())
 
 
 def write_flow(tmp_path, source):
@@ -86,7 +89,7 @@ def test_meta_literal_extraction_does_not_execute():
 
 def test_worktree_isolation_error_is_user_facing(tmp_path):
     engine = SimpleNamespace(cancel_event=asyncio.Event())
-    host = FlowHost(engine, cwd=tmp_path, default_provider="fake")
+    host = FlowHost(engine, cwd=tmp_path, default_harness="fake")
     with pytest.raises(ValueError, match="^worktree isolation is not supported$"):
         run(host._ctx_agent("test", isolation="worktree"))
 
@@ -203,7 +206,7 @@ async def main():
 
 def test_unawaited_eager_agents_are_drained_before_completion(tmp_path):
     source = """
-META = {"default_provider": "fake", "concurrency": 1}
+META = {"default_harness": "fake", "concurrency": 1}
 async def main():
     agent("orphan-one", retries=0)
     agent("orphan-two", retries=0)
@@ -378,7 +381,7 @@ def test_aexec_capture_keeps_bounded_tail(tmp_path, monkeypatch):
 
 def test_engine_success_failure_retries_timeout_and_journal(tmp_path):
     source = """
-META = {"default_provider": "fake"}
+META = {"default_harness": "fake"}
 async def main():
     return [
         await agent("hello", retries=0),
@@ -423,7 +426,7 @@ def test_retry_can_recover_parseable_output(tmp_path):
             return AsyncExecResult(1, "")
         return AsyncExecResult(0, '{"result":"recovered","cost":0.5}')
 
-    source = 'META={"default_provider":"fake"}\nasync def main():\n    return await agent("x")'
+    source = 'META={"default_harness":"fake"}\nasync def main():\n    return await agent("x")'
     outcome = run(
         run_flow(
             write_flow(tmp_path, source),
@@ -461,7 +464,7 @@ def test_pi_structured_failures_retry_and_preserve_cost(tmp_path, recover, schem
 
     source = (
         "async def main():\n"
-        f'    return await agent("test", provider="pi", retries=1, schema={schema!r})\n'
+        f'    return await agent("test", harness="pi", provider="claude-api", retries=1, schema={schema!r})\n'
     )
     outcome = run(
         run_flow(
@@ -509,7 +512,7 @@ def test_opencode_structured_failures_retry_and_preserve_cost(
 
     source = (
         "async def main():\n"
-        f'    return await agent("test", provider="opencode", retries=1, schema={schema!r})\n'
+        f'    return await agent("test", harness="opencode", provider="claude-api", retries=1, schema={schema!r})\n'
     )
     outcome = run(
         run_flow(
@@ -544,7 +547,7 @@ def test_semaphore_bounds_concurrent_agents(tmp_path):
         return AsyncExecResult(0, '{"result":"ok"}')
 
     source = """
-META={"default_provider":"fake"}
+META={"default_harness":"fake"}
 async def main():
     return await parallel([lambda i=i: agent(str(i), retries=0) for i in range(8)])
 """
@@ -561,7 +564,7 @@ async def main():
 
 def test_agent_cap_fails_run(tmp_path):
     source = """
-META={"default_provider":"fake", "max_agents":1}
+META={"default_harness":"fake", "max_agents":1}
 async def main():
     await agent("one", retries=0)
     return await agent("two", retries=0)
@@ -572,7 +575,7 @@ async def main():
 
 def test_cancellation_terminates_live_agent(tmp_path):
     source = """
-META={"default_provider":"fake"}
+META={"default_harness":"fake"}
 async def main():
     try:
         return await agent("slow", timeout=30, retries=0)
@@ -603,7 +606,7 @@ async def main():
 
 def test_schema_round_trip_returns_mapping_to_sandbox(tmp_path):
     source = """
-META={"default_provider":"fake"}
+META={"default_harness":"fake"}
 async def main():
     r = await agent("x", schema={"type":"object", "required":["findings"]})
     return r["findings"]
@@ -635,7 +638,7 @@ async def main():
     monkeypatch.setattr(
         sys,
         "argv",
-        ["cacli", "flow", "run", str(script), "--provider", "fake"],
+        ["cacli", "flow", "run", str(script), "--harness", "fake"],
     )
     with pytest.raises(SystemExit) as exc:
         cli_main()
@@ -665,7 +668,7 @@ def test_cli_flow_docs_omits_frontmatter(monkeypatch, capsys):
     cli_main()
     output = capsys.readouterr().out
     assert output.splitlines()[0] != "---"
-    assert "# cacli flow: cross-provider agent workflows" in output
+    assert "# cacli flow: cross-harness agent workflows" in output
 
 
 def test_cli_flow_run_help_mentions_flow_args(monkeypatch, capsys):
@@ -674,3 +677,16 @@ def test_cli_flow_run_help_mentions_flow_args(monkeypatch, capsys):
         cli_main()
     assert exc.value.code == 0
     assert "flow_args" in capsys.readouterr().out
+
+
+def test_flow_journal_records_harness_and_provider(tmp_path, fake_provider):
+    script = tmp_path / "pair.py"
+    script.write_text(
+        'META={"default_harness":"fake","default_provider":"openai-api"}\nasync def main():\n    return await agent("hello", harness="fake", provider="openai-api")'
+    )
+    outcome = asyncio.run(run_flow(script, runs_root=tmp_path / "runs"))
+    entries = read_journal(outcome.path / "journal.jsonl")
+    assert all(
+        entry["harness"] == "fake" and entry["provider"] == "openai-api"
+        for entry in entries
+    )

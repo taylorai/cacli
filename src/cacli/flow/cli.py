@@ -13,7 +13,7 @@ from typing import Any
 
 from cacli.flow import FlowBudgetExceeded, FlowCancelled, FlowRunFailed, run_flow
 from cacli.flow.runs import effective_status, list_runs, load_run_args, show_run
-from cacli.providers import list_providers
+from cacli.harnesses import list_harnesses
 
 
 def add_flow_parser(subparsers: Any) -> None:
@@ -22,7 +22,7 @@ def add_flow_parser(subparsers: Any) -> None:
         help="run sandboxed multi-agent workflows (see 'cacli flow docs')",
         description=(
             "Flows are sandboxed Python scripts that orchestrate agent subprocesses "
-            "across providers. Run `cacli flow docs` for the full DSL reference."
+            "across harnesses. Run `cacli flow docs` for the full DSL reference."
         ),
     )
     commands = flow.add_subparsers(dest="flow_command")
@@ -47,11 +47,11 @@ def add_flow_parser(subparsers: Any) -> None:
         default=None,
         help="max concurrent agent subprocesses (default: min(16, cpus-2))",
     )
+    run.add_argument("--harness", choices=list_harnesses(), default=None)
     run.add_argument(
         "--provider",
-        choices=list_providers(),
         default=None,
-        help="default provider for agent() calls that don't specify one",
+        help="default inference provider for agent() calls",
     )
     run.add_argument(
         "--cwd", default=".", help="working directory agents run in (default: current)"
@@ -126,7 +126,7 @@ def _skill_body(text: str) -> str:
 def _progress(event: dict[str, Any]) -> None:
     kind = event["type"]
     if kind in {"queued", "started", "done", "failed", "cached"}:
-        line = f"{kind:7} {event.get('label', 'agent')} [{event.get('provider', '?')}]"
+        line = f"{kind:7} {event.get('label', 'agent')} [{event.get('harness', '?')}]"
         if "duration_ms" in event:
             line += f" {event['duration_ms'] / 1000:.1f}s"
         if event.get("cost") is not None:
@@ -156,6 +156,7 @@ async def _run(args: argparse.Namespace, flow_args: Any) -> int:
             args.script,
             args=flow_args,
             concurrency=args.concurrency,
+            harness=args.harness,
             provider=args.provider,
             cwd=args.cwd,
             cancel_event=cancel_event,

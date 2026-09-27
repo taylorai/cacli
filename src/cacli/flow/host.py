@@ -9,7 +9,8 @@ from pathlib import Path
 from typing import Any
 
 from cacli.flow.engine import FlowEngine
-from cacli.providers import list_providers
+from cacli.harnesses import list_harnesses
+from cacli.inference import PROVIDERS
 
 
 EFFORTS = {"none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra", "auto"}
@@ -41,10 +42,12 @@ class FlowHost:
         engine: FlowEngine,
         *,
         cwd: Path,
-        default_provider: str = "claude",
+        default_harness: str = "claude",
+        default_provider: str | None = None,
     ):
         self.engine = engine
         self.cwd = cwd.resolve()
+        self.default_harness = default_harness
         self.default_provider = default_provider
         self.ambient_phase: str | None = None
 
@@ -100,6 +103,7 @@ class FlowHost:
         self,
         prompt: Any,
         *,
+        harness: Any = None,
         provider: Any = None,
         model: Any = None,
         effort: Any = None,
@@ -123,10 +127,17 @@ class FlowHost:
             raise TypeError("prompt must be a string")
         if len(prompt) > 1_000_000:
             raise ValueError("prompt is too long (max 1000000 characters)")
-        provider_name = self.default_provider if provider is None else provider
-        if not isinstance(provider_name, str) or provider_name not in list_providers():
+        harness_name = self.default_harness if harness is None else harness
+        if not isinstance(harness_name, str) or harness_name not in list_harnesses():
             raise ValueError(
-                f"provider must be a registered provider name: {', '.join(list_providers())}"
+                f"harness must be a registered harness name: {', '.join(list_harnesses())}"
+            )
+        provider_name = self.default_provider if provider is None else provider
+        if provider_name is not None and (
+            not isinstance(provider_name, str) or provider_name not in PROVIDERS
+        ):
+            raise ValueError(
+                f"provider must be a registered inference provider: {', '.join(PROVIDERS)}"
             )
         model = _optional_string("model", model)
         if model is not None and len(model) > 200:
@@ -193,6 +204,7 @@ class FlowHost:
         absolute_cwd, cwd_key = self._validate_cwd(cwd)
         return await self.engine.agent(
             prompt,
+            harness_name=harness_name,
             provider_name=provider_name,
             model=model,
             effort=effort,

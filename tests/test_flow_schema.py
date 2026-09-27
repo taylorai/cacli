@@ -9,12 +9,13 @@ from cacli.flow import FlowRunFailed, run_flow
 from cacli.flow.aexec import AsyncExecResult
 from cacli.flow.journal import JournalKeyChain, read_journal
 from cacli.flow.schema import extract_json
-from cacli.providers import _PROVIDERS
-from cacli.providers.base import BaseProvider
+from cacli.harnesses import _HARNESSES
+from cacli.harnesses.base import BaseHarness, Pairing
 from cacli.types import AgentRunResult
 
 
-class SchemaFakeProvider(BaseProvider):
+class SchemaFakeHarness(BaseHarness):
+    pairings = (Pairing("openai-api"),)
     name = "schema-fake"
 
     def build_command(self, prompt, **kwargs):
@@ -35,7 +36,7 @@ class SchemaFakeProvider(BaseProvider):
 
 @pytest.fixture(autouse=True)
 def schema_fake(monkeypatch):
-    monkeypatch.setitem(_PROVIDERS, "schema-fake", SchemaFakeProvider())
+    monkeypatch.setitem(_HARNESSES, "schema-fake", SchemaFakeHarness())
 
 
 def run(coro):
@@ -44,7 +45,7 @@ def run(coro):
 
 def script(tmp_path, body):
     path = tmp_path / "flow.py"
-    path.write_text('META={"default_provider":"schema-fake"}\n' + body)
+    path.write_text('META={"default_harness":"schema-fake"}\n' + body)
     return path
 
 
@@ -223,7 +224,8 @@ def test_schema_changes_key_decoration_does_not_and_resume_replays_dict(tmp_path
     expected_key = JournalKeyChain().next(
         {
             "prompt": "same",
-            "provider": "schema-fake",
+            "harness": "schema-fake",
+            "provider": "openai-api",
             "model": None,
             "effort": None,
             "schema": json.loads(schemas[0]),
@@ -297,7 +299,7 @@ def test_codex_native_schema_file_is_canonical_and_temporary(tmp_path):
 
     path = tmp_path / "codex-flow.py"
     path.write_text(
-        'async def main():\n    return await agent("answer", provider="codex", schema={"type":"object","required":["answer"],"properties":{"answer":{"type":"integer"}}}, retries=0)\n'
+        'async def main():\n    return await agent("answer", harness="codex", schema={"type":"object","required":["answer"],"properties":{"answer":{"type":"integer"}}}, retries=0)\n'
     )
     outcome = run(
         run_flow(
@@ -330,7 +332,7 @@ def test_native_claude_output_is_host_validated_and_retried(tmp_path):
 
     path = tmp_path / "claude-flow.py"
     path.write_text(
-        'async def main():\n    return await agent("answer", provider="claude", schema={"type":"object","required":["answer"],"properties":{"answer":{"type":"integer"}}}, retries=0)\n'
+        'async def main():\n    return await agent("answer", harness="claude", schema={"type":"object","required":["answer"],"properties":{"answer":{"type":"integer"}}}, retries=0)\n'
     )
     outcome = run(
         run_flow(

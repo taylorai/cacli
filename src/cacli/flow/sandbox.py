@@ -9,7 +9,7 @@ from __future__ import annotations
 import ast
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from pydantic_monty import Monty, ResourceLimits
 
@@ -113,7 +113,7 @@ async def execute(
                 "_ctx_budget_spent": host._ctx_budget_spent,
                 "_ctx_budget_remaining": host._ctx_budget_remaining,
             },
-            limits=limits or DEFAULT_LIMITS,
+            limits=cast(ResourceLimits, limits) if limits else DEFAULT_LIMITS,
         )
     except FlowScriptError:
         raise

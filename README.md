@@ -26,10 +26,25 @@ Behavior:
 - Automatic replay stops at the first unreconstructable mutating shell command or edit that no longer applies cleanly.
 - `generate-patch` writes a patch for the auto-applicable prefix without modifying the working tree.
 
+## Run an agent
+
+A run selects a CLI harness, an inference provider, and an unqualified model ID:
+
+```bash
+cacli run "Review this diff" --harness claude --provider claude-api --model claude-opus-4-8
+cacli run "Review this diff" --harness pi --provider workers-ai --model @cf/zai-org/glm-5.3
+```
+
+The CLI reads non-secret provider parameters from `AWS_REGION` or
+`CLOUDFLARE_ACCOUNT_ID` and checks required credential names or login files
+before execution. `build_launch()` returns the command, non-secret environment,
+environment variables to unset, and credential wire metadata without reading
+secret values. See [the provider design](docs/harnesses-and-providers.md).
+
 ## Workflows (`cacli flow`)
 
 Flows are sandboxed Python scripts that orchestrate coding-agent subprocesses
-across providers. The orchestration script has no direct filesystem, network,
+across harnesses and inference providers. The orchestration script has no direct filesystem, network,
 environment, or subprocess access; its side effects go through the injected
 workflow API, while the agents it launches run with their normal permissions.
 
@@ -41,8 +56,8 @@ META = {"name": "cross-review", "description": "cross-vendor review"}
 async def main():
     phase("Review")
     reviews = await parallel([
-        lambda: agent("Find correctness bugs in the current diff", provider="codex"),
-        lambda: agent("Find security issues in the current diff", provider="claude"),
+        lambda: agent("Find correctness bugs in the current diff", harness="codex"),
+        lambda: agent("Find security issues in the current diff", harness="claude"),
     ])
     log(f"Received {len([r for r in reviews if r])} reviews")
     return {"reviews": reviews}
@@ -69,8 +84,19 @@ the same reference as an agent skill with `cacli flow install-skill`.
 
 Headline features:
 
-- Cross-provider `agent()` calls to Claude, Codex, Devin, Cursor, Gemini, OpenCode, and Pi
+- Harness selection for Claude, Codex, Devin, Cursor, OpenCode, and Pi, with explicit inference providers
 - Structured output validated against JSON Schema
 - Journal-based resume that replays unchanged calls
 - Dollar budgets with resumable budget-exceeded runs
 - Sandboxed orchestration scripts with a focused async Python DSL
+
+## Development
+
+```bash
+uv sync                     # installs pinned dev tools (ruff, ty, pytest, prek)
+uv run prek install         # once: run the hooks on every commit
+uv run prek run --all-files # lint, format, typecheck, and test the whole repo
+```
+
+Hooks come from `.pre-commit-config.yaml` and need prek; stock pre-commit
+cannot run it. Tool versions are pinned in `pyproject.toml`'s dev group.

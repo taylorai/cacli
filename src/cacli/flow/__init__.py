@@ -18,7 +18,7 @@ from cacli.flow.runs import (
     normalize_json,
 )
 from cacli.flow.sandbox import FlowScriptError, execute, extract_meta
-from cacli.providers import list_providers
+from cacli.harnesses import list_harnesses
 
 
 @dataclass
@@ -73,6 +73,7 @@ async def run_flow(
     *,
     args: Any = None,
     concurrency: int | None = None,
+    harness: str | None = None,
     provider: str | None = None,
     cwd: str | Path | None = None,
     runs_root: Path | None = None,
@@ -104,9 +105,10 @@ async def run_flow(
     )
     configured_concurrency = _bounded_int("concurrency", configured_concurrency, 1, 64)
     max_agents = _bounded_int("max_agents", meta.get("max_agents", 500), 1, 100_000)
-    default_provider = provider or meta.get("default_provider", "claude")
-    if default_provider not in list_providers():
-        raise ValueError(f"unknown default provider: {default_provider}")
+    default_harness = harness or meta.get("default_harness", "claude")
+    if default_harness not in list_harnesses():
+        raise ValueError(f"unknown default harness: {default_harness}")
+    default_provider = provider or meta.get("default_provider")
 
     configured_budget = _budget(budget if budget is not None else meta.get("budget"))
     resume_cache = None
@@ -137,7 +139,12 @@ async def run_flow(
         resume_cache=resume_cache,
         **options,
     )
-    host = FlowHost(engine, cwd=flow_cwd, default_provider=default_provider)
+    host = FlowHost(
+        engine,
+        cwd=flow_cwd,
+        default_harness=default_harness,
+        default_provider=default_provider,
+    )
     engine.start()
     try:
         try:

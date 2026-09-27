@@ -1,14 +1,85 @@
+# Run with prek (a dev dependency): `uv run prek install` once, then hooks run
+# on commit. `uv run prek run --all-files` checks the whole repo. Stock
+# pre-commit cannot run this file (`repo: builtin` and `priority` are prek-only).
 default_stages: [pre-commit]
+priorities:
+  fix-lint: 0
+  fix-format: 1
+  checks: 10
+  # ty and the test suite are the slowest; keep them out of the checks fan-out.
+  checks-heavy: 20
 repos:
+  # entire repo - check for secrets
   - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.24.2
+    rev: d5c275d6b2140fcb59bc3f58b8dd5350f5b19df6 # v8.24.2
     hooks:
       - id: gitleaks
-
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.7.4
+        priority: checks
+  - repo: builtin
     hooks:
+      - id: check-merge-conflict
+        priority: checks
+      - id: check-case-conflict
+        priority: checks
+      - id: check-added-large-files
+        priority: checks
+      - id: check-toml
+        priority: checks
+      - id: check-yaml
+        priority: checks
+      - id: check-json
+        priority: checks
+        # tsconfig files are JSONC
+        exclude: ^dashboard/
+      - id: check-executables-have-shebangs
+        priority: checks
+  - repo: local
+    hooks:
+      - id: max-file-lines
+        priority: checks
+        name: "Block files over 2 500 lines"
+        language: script
+        entry: scripts/pre-commit/max-lines-check.sh
+        files: \.(py|js|ts|tsx|jsx)$
+      - id: banned-weird-spaces
+        priority: checks
+        name: "Block weird space characters in all text files"
+        language: script
+        entry: scripts/pre-commit/banned-weird-spaces.sh
+        files: \.(py|js|ts|tsx|jsx|json|yaml|yml|md|txt|css|html|sh|toml|lock)$
+      # ruff, ty, and pytest come from the pinned dev dependencies in
+      # pyproject.toml, so there is one version to bump.
       - id: ruff
-        args: [--fix, "--config", "pyproject.toml"]
+        priority: fix-lint
+        name: ruff
+        language: system
+        entry: uv run --no-sync ruff check --fix
+        files: ^(src|tests)/.*\.py$
       - id: ruff-format
-        args: ["--config", "pyproject.toml"]
+        priority: fix-format
+        name: ruff format
+        language: system
+        entry: uv run --no-sync ruff format
+        files: ^(src|tests)/.*\.py$
+      - id: uv-lock-check
+        priority: checks
+        name: "uv.lock matches pyproject.toml"
+        language: system
+        entry: uv lock --check
+        files: ^(pyproject\.toml|uv\.lock)$
+        pass_filenames: false
+      - id: ty-check
+        priority: checks-heavy
+        name: ty (typecheck)
+        language: system
+        entry: uv run --no-sync ty check src
+        files: ^src/.*\.py$
+        pass_filenames: false
+      - id: pytest
+        priority: checks-heavy
+        name: pytest
+        language: system
+        entry: uv run --no-sync pytest -q
+        files: ^(src|tests)/.*\.py$|^pyproject\.toml$
+        pass_filenames: false
+        require_serial: true

@@ -27,6 +27,7 @@ class AgentRunResult:
     result_message: str = ""
     total_cost: float | None = None
     permission_denials: list[dict] = field(default_factory=list)
+    harness: str = ""
     provider: str = ""
     model: str | None = None
     command: str = ""

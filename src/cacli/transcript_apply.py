@@ -38,7 +38,7 @@ class TranscriptAction:
 
     index: int
     source_ref: str
-    provider: str
+    harness: str
     kind: str
     path: str | None
     summary: str
@@ -52,7 +52,7 @@ class BashWarning:
     """A shell command that likely mutated files but cannot be replayed."""
 
     source_ref: str
-    provider: str
+    harness: str
     command: str
     reason: str
     blocking: bool = True
@@ -71,7 +71,7 @@ class TimelineEvent:
 class TranscriptAnalysis:
     """Replay analysis against the current working tree."""
 
-    provider: str
+    harness: str
     transcript_path: Path
     root: Path
     total_entries: int
@@ -86,7 +86,9 @@ class TranscriptAnalysis:
 
     @property
     def fully_applicable(self) -> bool:
-        return self.blocker is None and len(self.applicable_actions) == len(self.actions)
+        return self.blocker is None and len(self.applicable_actions) == len(
+            self.actions
+        )
 
 
 class VirtualWorkspace:
@@ -267,12 +269,14 @@ def load_transcript_entries(path: Path) -> tuple[list[TranscriptEntry], int]:
         raise TranscriptApplyError(f"unsupported transcript format in {path}")
 
     if not entries:
-        raise TranscriptApplyError(f"transcript {path} did not contain any object entries")
+        raise TranscriptApplyError(
+            f"transcript {path} did not contain any object entries"
+        )
     return entries, 0
 
 
-def detect_provider(entries: list[TranscriptEntry], requested: str | None = None) -> str:
-    """Detect transcript provider from event shapes."""
+def detect_harness(entries: list[TranscriptEntry], requested: str | None = None) -> str:
+    """Detect transcript harness from event shapes."""
     if requested and requested != "auto":
         return requested
     if _looks_like_codex(entries):
@@ -280,7 +284,7 @@ def detect_provider(entries: list[TranscriptEntry], requested: str | None = None
     if _looks_like_claude(entries):
         return "claude"
     raise TranscriptApplyError(
-        "could not detect transcript provider; use --provider {claude,codex}"
+        "could not detect transcript harness; use --harness {claude,codex}"
     )
 
 
@@ -289,7 +293,7 @@ def _new_action(
     timeline: list[TimelineEvent],
     *,
     source_ref: str,
-    provider: str,
+    harness: str,
     kind: str,
     path: str | None,
     summary: str,
@@ -298,7 +302,7 @@ def _new_action(
     action = TranscriptAction(
         index=len(actions) + 1,
         source_ref=source_ref,
-        provider=provider,
+        harness=harness,
         kind=kind,
         path=path,
         summary=summary,
@@ -328,7 +332,10 @@ def _classify_shell_command(command: str) -> str | None:
         ("sed -i in-place edit", r"\bsed\b[^\n]*\s-i(?:\b|[ =])"),
         ("perl in-place edit", r"\bperl\b[^\n]*\s-pi\b"),
         ("git apply or patch", r"\b(?:git\s+apply|patch)\b"),
-        ("redirected file write", r"(?:^|[;&|]\s*)(?:cat|printf|echo|tee)\b[^\n]*(?:>|>>)\s*\S"),
+        (
+            "redirected file write",
+            r"(?:^|[;&|]\s*)(?:cat|printf|echo|tee)\b[^\n]*(?:>|>>)\s*\S",
+        ),
         ("file move/copy/delete", r"\b(?:mv|cp|rm|install|truncate)\b"),
     ]
     for reason, pattern in patterns:
@@ -355,7 +362,7 @@ def _extract_shell_command(tool_name: str, tool_input: Any) -> str | None:
 def _parse_apply_patch_text(
     patch_text: str,
     source_ref: str,
-    provider: str,
+    harness: str,
     actions: list[TranscriptAction],
     timeline: list[TimelineEvent],
 ) -> None:
@@ -385,7 +392,7 @@ def _parse_apply_patch_text(
                 actions,
                 timeline,
                 source_ref=source_ref,
-                provider=provider,
+                harness=harness,
                 kind="add",
                 path=path,
                 summary=f"add {path}",
@@ -399,7 +406,7 @@ def _parse_apply_patch_text(
                 actions,
                 timeline,
                 source_ref=source_ref,
-                provider=provider,
+                harness=harness,
                 kind="delete",
                 path=path,
                 summary=f"delete {path}",
@@ -421,20 +428,26 @@ def _parse_apply_patch_text(
                 actions,
                 timeline,
                 source_ref=source_ref,
-                provider=provider,
+                harness=harness,
                 kind="patch",
                 path=path,
-                summary=f"patch {path}" if not move_to else f"patch {path} -> {move_to}",
+                summary=f"patch {path}"
+                if not move_to
+                else f"patch {path} -> {move_to}",
                 payload={"path": path, "move_to": move_to, "hunks": hunk_lines},
             )
             continue
-        raise TranscriptApplyError(f"{source_ref}: unsupported patch directive {line!r}")
-    raise TranscriptApplyError(f"{source_ref}: apply_patch payload is missing *** End Patch")
+        raise TranscriptApplyError(
+            f"{source_ref}: unsupported patch directive {line!r}"
+        )
+    raise TranscriptApplyError(
+        f"{source_ref}: apply_patch payload is missing *** End Patch"
+    )
 
 
 def _extract_common_tool_actions(
     *,
-    provider: str,
+    harness: str,
     source_ref: str,
     tool_name: str,
     tool_input: Any,
@@ -453,7 +466,7 @@ def _extract_common_tool_actions(
                 actions,
                 timeline,
                 source_ref=source_ref,
-                provider=provider,
+                harness=harness,
                 kind="write",
                 path=path,
                 summary=f"write {path}",
@@ -463,18 +476,18 @@ def _extract_common_tool_actions(
 
     if normalized in {"edit", "str_replace"} and isinstance(payload, dict):
         path = payload.get("file_path") or payload.get("path")
-        old_text = payload.get("old_string") or payload.get("oldText") or payload.get(
-            "before"
+        old_text = (
+            payload.get("old_string") or payload.get("oldText") or payload.get("before")
         )
-        new_text = payload.get("new_string") or payload.get("newText") or payload.get(
-            "after"
+        new_text = (
+            payload.get("new_string") or payload.get("newText") or payload.get("after")
         )
         if isinstance(path, str) and old_text is not None and new_text is not None:
             _new_action(
                 actions,
                 timeline,
                 source_ref=source_ref,
-                provider=provider,
+                harness=harness,
                 kind="edit",
                 path=path,
                 summary=f"edit {path}",
@@ -497,11 +510,11 @@ def _extract_common_tool_actions(
             for item in edits:
                 if not isinstance(item, dict):
                     continue
-                old_text = item.get("old_string") or item.get("oldText") or item.get(
-                    "before"
+                old_text = (
+                    item.get("old_string") or item.get("oldText") or item.get("before")
                 )
-                new_text = item.get("new_string") or item.get("newText") or item.get(
-                    "after"
+                new_text = (
+                    item.get("new_string") or item.get("newText") or item.get("after")
                 )
                 if old_text is None or new_text is None:
                     continue
@@ -519,7 +532,7 @@ def _extract_common_tool_actions(
                     actions,
                     timeline,
                     source_ref=source_ref,
-                    provider=provider,
+                    harness=harness,
                     kind="multiedit",
                     path=path,
                     summary=f"multiedit {path}",
@@ -533,24 +546,20 @@ def _extract_common_tool_actions(
         else:
             patch_text = payload
         if isinstance(patch_text, str):
-            _parse_apply_patch_text(
-                patch_text, source_ref, provider, actions, timeline
-            )
+            _parse_apply_patch_text(patch_text, source_ref, harness, actions, timeline)
         return
 
     shell_command = _extract_shell_command(normalized, payload)
     if shell_command:
         patch_text = _extract_patch_body(shell_command)
         if patch_text:
-            _parse_apply_patch_text(
-                patch_text, source_ref, provider, actions, timeline
-            )
+            _parse_apply_patch_text(patch_text, source_ref, harness, actions, timeline)
             return
         reason = _classify_shell_command(shell_command)
         if reason:
             warning = BashWarning(
                 source_ref=source_ref,
-                provider=provider,
+                harness=harness,
                 command=shell_command,
                 reason=reason,
             )
@@ -582,7 +591,7 @@ def extract_actions_from_claude(
             if block.get("type") != "tool_use":
                 continue
             _extract_common_tool_actions(
-                provider="claude",
+                harness="claude",
                 source_ref=entry.source_ref,
                 tool_name=str(block.get("name") or ""),
                 tool_input=block.get("input"),
@@ -613,7 +622,7 @@ def extract_actions_from_codex(
         item_type = str(item.get("type") or "")
         if item_type == "command_execution":
             _extract_common_tool_actions(
-                provider="codex",
+                harness="codex",
                 source_ref=entry.source_ref,
                 tool_name="command_execution",
                 tool_input=item,
@@ -639,7 +648,7 @@ def extract_actions_from_codex(
             or item.get("parameters")
         )
         _extract_common_tool_actions(
-            provider="codex",
+            harness="codex",
             source_ref=entry.source_ref,
             tool_name=str(tool_name or ""),
             tool_input=tool_input,
@@ -837,20 +846,20 @@ def analyze_transcript(
     transcript_path: str,
     *,
     cwd: str = ".",
-    provider: str = "auto",
+    harness: str = "auto",
 ) -> TranscriptAnalysis:
     """Parse a transcript and plan which actions can be safely replayed."""
     transcript = Path(transcript_path).resolve()
     root = Path(cwd).resolve()
     entries, skipped_lines = load_transcript_entries(transcript)
-    detected_provider = detect_provider(entries, provider)
+    detected_harness = detect_harness(entries, harness)
 
-    if detected_provider == "claude":
+    if detected_harness == "claude":
         actions, bash_warnings, timeline = extract_actions_from_claude(entries)
-    elif detected_provider == "codex":
+    elif detected_harness == "codex":
         actions, bash_warnings, timeline = extract_actions_from_codex(entries)
     else:
-        raise TranscriptApplyError(f"unsupported provider {detected_provider}")
+        raise TranscriptApplyError(f"unsupported harness {detected_harness}")
 
     workspace = VirtualWorkspace(root)
     applicable_actions: list[TranscriptAction] = []
@@ -882,14 +891,16 @@ def analyze_transcript(
             action.status = "applicable"
             applicable_actions.append(action)
         else:
-            blocker = f"{action.source_ref}: {action.summary} could not be replayed: {reason}"
+            blocker = (
+                f"{action.source_ref}: {action.summary} could not be replayed: {reason}"
+            )
             action.status = "conflict"
             action.reason = blocker
 
     touched_paths = workspace.touched_paths()
     original_files, final_files = _extract_states(root, touched_paths, workspace)
     return TranscriptAnalysis(
-        provider=detected_provider,
+        harness=detected_harness,
         transcript_path=transcript,
         root=root,
         total_entries=len(entries),
@@ -913,8 +924,10 @@ def _write_state(base: Path, rel_path: str, state: FileState) -> None:
 
 def generate_patch(analysis: TranscriptAnalysis, patch_path: str | None = None) -> Path:
     """Write a git-style patch file for the auto-applicable action prefix."""
-    output = Path(patch_path).resolve() if patch_path else (
-        analysis.root / f"{analysis.transcript_path.stem}.recovered.patch"
+    output = (
+        Path(patch_path).resolve()
+        if patch_path
+        else (analysis.root / f"{analysis.transcript_path.stem}.recovered.patch")
     )
     output.parent.mkdir(parents=True, exist_ok=True)
 
@@ -977,7 +990,9 @@ def _action_diff_for_workspace(
     if not ok:
         return f"# cannot preview: {reason}"
 
-    rel_path = action.path or str(action.payload.get("move_to") or action.payload.get("path"))
+    rel_path = action.path or str(
+        action.payload.get("move_to") or action.payload.get("path")
+    )
     if not rel_path:
         return action.summary
     rel_path = workspace.normalize_path(rel_path)
@@ -1010,7 +1025,7 @@ def run_interactive(analysis: TranscriptAnalysis) -> int:
 
     approved: list[TranscriptAction] = []
     print(
-        f"Provider: {analysis.provider} | applicable actions: "
+        f"Harness: {analysis.harness} | applicable actions: "
         f"{len(analysis.applicable_actions)}/{len(analysis.actions)}"
     )
     if analysis.blocker:
@@ -1060,7 +1075,7 @@ def run_interactive(analysis: TranscriptAnalysis) -> int:
 def print_analysis_summary(analysis: TranscriptAnalysis) -> None:
     """Print a concise analysis summary before replay."""
     print(f"Transcript: {analysis.transcript_path}")
-    print(f"Provider: {analysis.provider}")
+    print(f"Harness: {analysis.harness}")
     print(f"Parsed entries: {analysis.total_entries}")
     if analysis.skipped_lines:
         print(f"Skipped non-JSON lines: {analysis.skipped_lines}")
@@ -1081,7 +1096,7 @@ def run_transcript_apply(args) -> int:
     analysis = analyze_transcript(
         args.transcript,
         cwd=args.cwd,
-        provider=getattr(args, "provider", "auto"),
+        harness=getattr(args, "harness", "auto"),
     )
     print_analysis_summary(analysis)
 
@@ -1101,7 +1116,9 @@ def run_transcript_apply(args) -> int:
         apply_actions_to_disk(analysis.root, analysis.applicable_actions)
         print(f"Applied {len(analysis.applicable_actions)} transcript actions.")
         if analysis.blocker:
-            print("Stopped before the blocker; later transcript changes were not applied.")
+            print(
+                "Stopped before the blocker; later transcript changes were not applied."
+            )
             return 1
         return 0
 

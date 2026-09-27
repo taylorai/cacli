@@ -24,9 +24,7 @@ AGENT_STEP = {
             "arguments": {"path": "README.md"},
         }
     ],
-    "observation": {
-        "results": [{"source_call_id": "call-1", "content": "# cacli"}]
-    },
+    "observation": {"results": [{"source_call_id": "call-1", "content": "# cacli"}]},
 }
 
 
@@ -173,7 +171,12 @@ def test_run_devin_stream_emits_stream_json(tmp_path):
         if block["type"] == "tool_use"
     ]
     assert tool_uses == [
-        {"type": "tool_use", "id": "call-1", "name": "read", "input": {"path": "README.md"}}
+        {
+            "type": "tool_use",
+            "id": "call-1",
+            "name": "read",
+            "input": {"path": "README.md"},
+        }
     ]
 
 

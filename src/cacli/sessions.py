@@ -17,6 +17,7 @@ class SessionInfo:
 
     id: str
     prompt: str
+    harness: str
     provider: str
     model: str | None
     status: str  # "running", "done", "failed"

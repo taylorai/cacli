@@ -1,10 +1,11 @@
-"""Pi coding-agent provider."""
+"""Pi coding-agent harness."""
 
 import json
 import shlex
-from typing import Any
+from pathlib import Path
+from typing import Any, Sequence
 
-from cacli.providers.base import BaseProvider
+from cacli.harnesses.base import BaseHarness, Pairing
 from cacli.types import AgentRunResult
 
 
@@ -41,10 +42,23 @@ def _message_cost(message: object) -> float | None:
     return float(total)
 
 
-class PiProvider(BaseProvider):
-    """Provider for the Pi coding-agent CLI."""
+class PiHarness(BaseHarness):
+    """Harness for the Pi coding-agent CLI."""
 
     name = "pi"
+    pairings = (
+        Pairing(
+            "workers-ai",
+            credentials=("CLOUDFLARE_API_KEY",),
+            env=(("CLOUDFLARE_ACCOUNT_ID", "{account_id}"),),
+            model_prefix="cloudflare-workers-ai",
+            default_model="@cf/zai-org/glm-5.3",
+        ),
+        Pairing(
+            "claude-api", credentials=("ANTHROPIC_API_KEY",), model_prefix="anthropic"
+        ),
+        Pairing("openai-api", credentials=("OPENAI_API_KEY",), model_prefix="openai"),
+    )
 
     def build_command(
         self,
@@ -54,19 +68,21 @@ class PiProvider(BaseProvider):
         web_search: bool = True,
         settings: str | None = None,
         sandbox: bool | None = None,
-        output_schema: dict | None = None,
+        output_schema: dict | Path | None = None,
+        exec_prefix: Sequence[str] = (),
     ) -> str:
         if sandbox:
             raise NotImplementedError(
-                "provider 'pi' relies on external sandboxing and cannot enable "
+                "harness 'pi' relies on external sandboxing and cannot enable "
                 "an OS sandbox itself"
             )
         if settings is not None:
-            raise ValueError("provider 'pi' does not support a settings argument")
+            raise ValueError("harness 'pi' does not support a settings argument")
 
         # cacli runs Pi in externally isolated environments. Trust the project
         # so Pi loads repository-local instructions, settings, and resources.
         parts = [
+            *exec_prefix,
             "pi",
             "--mode",
             "json",
@@ -128,7 +144,7 @@ class PiProvider(BaseProvider):
     def build_initial_log_entry(self, prompt: str, model: str | None = None) -> str:
         entry: dict[str, Any] = {
             "type": "user",
-            "provider": "pi",
+            "harness": "pi",
             "message": {"role": "user", "content": prompt},
         }
         if model:
@@ -141,12 +157,14 @@ class PiProvider(BaseProvider):
         model: str | None = None,
         settings: str | None = None,
         sandbox: bool | None = None,
+        exec_prefix: Sequence[str] = (),
     ) -> str:
         return self.build_command(
             prompt=prompt,
             model=model,
             settings=settings,
             sandbox=sandbox,
+            exec_prefix=exec_prefix,
         )
 
     def extract_result_from_json(self, raw_output: str) -> str:

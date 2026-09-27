@@ -90,7 +90,7 @@ def _tui_main(stdscr) -> None:
         fixed_w = id_w + prov_w + model_w + status_w + runtime_w + 1
         col_header = (
             f" {'ID':<{id_w}}"
-            f"{'Provider':<{prov_w}}"
+            f"{'Harness':<{prov_w}}"
             f"{'Model':<{model_w}}"
             f"{'Status':<{status_w}}"
             f"{'Runtime':<{runtime_w}}"
@@ -119,7 +119,7 @@ def _tui_main(stdscr) -> None:
             # Build the row without status
             prefix = (
                 f" {session.id:<{id_w}}"
-                f"{session.provider:<{prov_w}}"
+                f"{session.harness:<{prov_w}}"
                 f"{model_display:<{model_w}}"
             )
             suffix = f"{runtime:<{runtime_w}}{prompt_trunc}"

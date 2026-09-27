@@ -113,7 +113,7 @@ def init_entry(export: dict, cwd: str) -> dict:
     return {
         "type": "system",
         "subtype": "init",
-        "provider": "devin",
+        "harness": "devin",
         "session_id": export.get("session_id"),
         "model": agent.get("model_name"),
         "cwd": cwd,

@@ -1,18 +1,13 @@
-"""OpenCode coding-agent provider."""
+"""OpenCode coding-agent harness."""
 
 import json
 import shlex
 import warnings
-from typing import Any
+from pathlib import Path
+from typing import Any, Sequence
 
-from cacli.providers.base import BaseProvider
+from cacli.harnesses.base import BaseHarness, Pairing
 from cacli.types import AgentRunResult
-
-
-OPENCODE_DEFAULT_MODEL = "zai-coding-plan/glm-5.3"
-OPENCODE_MODEL_ALIASES = {
-    "glm-5.3": OPENCODE_DEFAULT_MODEL,
-}
 
 
 def _numeric_cost(part: object) -> float | None:
@@ -43,15 +38,23 @@ def _error_message(error: object) -> str:
     return name.strip() if isinstance(name, str) else ""
 
 
-class OpenCodeProvider(BaseProvider):
-    """Provider for the OpenCode CLI."""
+class OpenCodeHarness(BaseHarness):
+    """Harness for the OpenCode CLI."""
 
     name = "opencode"
-
-    def resolve_model(self, model: str | None) -> str:
-        if model:
-            return OPENCODE_MODEL_ALIASES.get(model, model)
-        return OPENCODE_DEFAULT_MODEL
+    pairings = (
+        Pairing(
+            "workers-ai",
+            credentials=("CLOUDFLARE_API_KEY",),
+            env=(("CLOUDFLARE_ACCOUNT_ID", "{account_id}"),),
+            model_prefix="cloudflare-workers-ai",
+            default_model="@cf/zai-org/glm-5.3",
+        ),
+        Pairing(
+            "claude-api", credentials=("ANTHROPIC_API_KEY",), model_prefix="anthropic"
+        ),
+        Pairing("openai-api", credentials=("OPENAI_API_KEY",), model_prefix="openai"),
+    )
 
     def build_command(
         self,
@@ -61,7 +64,8 @@ class OpenCodeProvider(BaseProvider):
         web_search: bool = True,
         settings: str | None = None,
         sandbox: bool | None = None,
-        output_schema: dict | None = None,
+        output_schema: dict | Path | None = None,
+        exec_prefix: Sequence[str] = (),
     ) -> str:
         if not web_search:
             warnings.warn(
@@ -73,24 +77,28 @@ class OpenCodeProvider(BaseProvider):
             )
         if sandbox:
             raise NotImplementedError(
-                "provider 'opencode' relies on external sandboxing and cannot "
+                "harness 'opencode' relies on external sandboxing and cannot "
                 "enable an OS sandbox itself"
             )
 
         parts = [
+            *exec_prefix,
             "opencode",
             "run",
             "--format",
             "json",
             "--auto",
-            "--model",
-            self.resolve_model(model),
         ]
+        if model:
+            parts.extend(["--model", model])
         if reasoning_effort and reasoning_effort != "auto":
             parts.extend(["--variant", reasoning_effort])
 
         if settings is not None:
-            parts = ["env", f"OPENCODE_CONFIG={settings}", *parts]
+            if not exec_prefix:
+                parts = ["env", f"OPENCODE_CONFIG={settings}", *parts]
+            else:
+                parts.insert(len(exec_prefix), f"OPENCODE_CONFIG={settings}")
         # Stdin avoids CLI flag parsing and OpenCode's positional quote rewriting.
         return f"printf '%s' {shlex.quote(prompt)} | {shlex.join(parts)}"
 
@@ -115,7 +123,7 @@ class OpenCodeProvider(BaseProvider):
             event_type = event.get("type")
             if event_type == "error":
                 message = _error_message(event.get("error"))
-                last_error = message or "OpenCode provider returned an error"
+                last_error = message or "OpenCode harness returned an error"
                 continue
 
             part = event.get("part")
@@ -164,11 +172,11 @@ class OpenCodeProvider(BaseProvider):
     def build_initial_log_entry(self, prompt: str, model: str | None = None) -> str:
         entry: dict[str, Any] = {
             "type": "user",
-            "provider": "opencode",
+            "harness": "opencode",
             "message": {"role": "user", "content": prompt},
         }
         if model:
-            entry["model"] = self.resolve_model(model)
+            entry["model"] = model
         return json.dumps(entry)
 
     def build_pr_description_command(
@@ -177,12 +185,14 @@ class OpenCodeProvider(BaseProvider):
         model: str | None = None,
         settings: str | None = None,
         sandbox: bool | None = None,
+        exec_prefix: Sequence[str] = (),
     ) -> str:
         return self.build_command(
             prompt=prompt,
             model=model,
             settings=settings,
             sandbox=sandbox,
+            exec_prefix=exec_prefix,
         )
 
     def extract_result_from_json(self, raw_output: str) -> str:
