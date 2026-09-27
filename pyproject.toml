@@ -34,8 +34,10 @@ ignore = ["B008", "B904"]
 
 [dependency-groups]
 dev = [
+    "build==1.6.1",
     "prek==0.4.14",
     "pytest==9.1.1",
     "ruff==0.16.7",
+    "twine==7.0.0",
     "ty==0.0.75",
 ]
