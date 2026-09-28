@@ -19,6 +19,15 @@ def test_build_command_no_sandbox_uses_danger_full_access():
     assert "workspace-write" not in cmd
 
 
+def test_build_command_sets_web_search_explicitly():
+    provider = CodexHarness()
+
+    assert "--config web_search=live" in provider.build_command("x")
+    off = provider.build_command("x", web_search=False)
+    assert "--config web_search=disabled" in off
+    assert "web_search_request" not in off
+
+
 def test_openai_pairing_keeps_model_and_effort_defaults():
     cmd = build_launch("codex", "fix the tests").command
 

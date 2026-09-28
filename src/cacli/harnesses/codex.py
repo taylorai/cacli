@@ -102,8 +102,8 @@ class CodexHarness(BaseHarness):
         if reasoning_effort is not None:
             cmd += f" --config model_reasoning_effort={shlex.quote(reasoning_effort)}"
 
-        if web_search:
-            cmd += " --config features.web_search_request=true"
+        # Codex enables cached web search by default, so state both cases.
+        cmd += f" --config web_search={'live' if web_search else 'disabled'}"
         if output_schema is not None:
             cmd += f" --output-schema {shlex.quote(str(output_schema))}"
         return cmd
