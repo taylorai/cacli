@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cacli"
-version = "0.2.1"
+version = "0.2.2"
 description = "Harness and provider CLI for running coding agents"
 readme = "README.md"
 license = "MIT"

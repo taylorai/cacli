@@ -1,12 +1,19 @@
 """Inference providers, required parameters, and credential wire metadata."""
 
+import os
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
+from urllib.parse import urlsplit
 
 
 @dataclass(frozen=True)
 class Param:
     name: str
     env: str
+    normalize: Callable[[str], str] | None = None
+
+    def read(self, env: Mapping[str, str] | None = None) -> str:
+        return (env or {}).get(self.env, os.environ.get(self.env, ""))
 
 
 @dataclass(frozen=True)
@@ -66,8 +73,16 @@ class Provider:
     openai_base_url: str | None = None
 
 
+def _hostname(endpoint: str) -> str:
+    """Accept a bare host or a portal endpoint URL like https://x.openai.azure.com/."""
+    return urlsplit(endpoint if "//" in endpoint else f"//{endpoint}").hostname or ""
+
+
 REGION = Param("region", "AWS_REGION")
 ACCOUNT_ID = Param("account_id", "CLOUDFLARE_ACCOUNT_ID")
+# Any of the resource's hosts works: *.openai.azure.com,
+# *.cognitiveservices.azure.com, or *.services.ai.azure.com.
+AZURE_HOST = Param("azure_host", "AZURE_OPENAI_ENDPOINT", normalize=_hostname)
 
 PROVIDERS = {
     "claude-sub": Provider(
@@ -137,6 +152,21 @@ PROVIDERS = {
         ),
         "https://bedrock-runtime.{region}.amazonaws.com/openai/v1",
     ),
+    "azure": Provider(
+        "azure",
+        (AZURE_HOST,),
+        (
+            Credential(
+                env="AZURE_OPENAI_API_KEY",
+                binding=WireBinding(
+                    ("{azure_host}",),
+                    header="Authorization",
+                    value_format="Bearer {secret}",
+                ),
+            ),
+        ),
+        "https://{azure_host}/openai/v1",
+    ),
     "workers-ai": Provider(
         "workers-ai",
         (ACCOUNT_ID,),
@@ -175,3 +205,12 @@ PROVIDERS = {
         ),
     ),
 }
+
+
+def provider_params(env: Mapping[str, str] | None = None) -> dict[str, str]:
+    """Read every provider parameter from env, falling back to os.environ."""
+    return {
+        param.name: param.read(env)
+        for provider in PROVIDERS.values()
+        for param in provider.params
+    }

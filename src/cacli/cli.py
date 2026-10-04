@@ -7,7 +7,7 @@ import subprocess
 import sys
 
 from cacli.harnesses import list_harnesses
-from cacli.inference import PROVIDERS
+from cacli.inference import PROVIDERS, provider_params
 from cacli.runner import build_launch, check_credentials, run_agent
 from cacli.transcript_apply import TranscriptApplyError, run_transcript_apply
 from cacli.types import ExecResult
@@ -111,13 +111,6 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _provider_params() -> dict[str, str]:
-    return {
-        "region": os.environ.get("AWS_REGION", ""),
-        "account_id": os.environ.get("CLOUDFLARE_ACCOUNT_ID", ""),
-    }
-
-
 def _run_command(args) -> None:
     """Handle 'cacli run' — synchronous agent execution."""
     launch = build_launch(
@@ -125,7 +118,7 @@ def _run_command(args) -> None:
         args.prompt,
         provider=args.provider,
         model=args.model,
-        params=_provider_params(),
+        params=provider_params(),
         reasoning_effort=args.reasoning_effort,
         web_search=args.web_search,
         settings=args.settings,
@@ -139,7 +132,7 @@ def _run_command(args) -> None:
     result = run_agent(
         harness=args.harness,
         provider=args.provider,
-        params=_provider_params(),
+        params=provider_params(),
         prompt=args.prompt,
         exec_fn=subprocess_exec,
         model=args.model,

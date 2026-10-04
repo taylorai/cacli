@@ -7,18 +7,22 @@ import pytest
 
 from cacli import build_launch, get_harness, list_harnesses
 from cacli.cli import check_credentials
-from cacli.inference import PROVIDERS
+from cacli.inference import PROVIDERS, provider_params
 
 
 MATRIX = {
     "claude": ("claude-sub", "claude-api", "bedrock"),
-    "codex": ("openai-sub", "openai-api", "bedrock", "workers-ai"),
+    "codex": ("openai-sub", "openai-api", "bedrock", "azure", "workers-ai"),
     "pi": ("workers-ai", "claude-api", "openai-api"),
     "opencode": ("workers-ai", "claude-api", "openai-api"),
     "cursor": ("cursor",),
     "devin": ("devin",),
 }
-PARAMS = {"region": "us-west-2", "account_id": "account-123"}
+PARAMS = {
+    "region": "us-west-2",
+    "account_id": "account-123",
+    "azure_host": "res.cognitiveservices.azure.com",
+}
 
 
 def test_full_support_matrix_and_unsupported_pairs():
@@ -208,7 +212,7 @@ def test_adapter_prefix_stays_before_binary_for_adversarial_prompts(
 
 
 def test_codex_non_openai_pairs_require_explicit_model():
-    for provider in ("bedrock", "workers-ai"):
+    for provider in ("bedrock", "azure", "workers-ai"):
         with pytest.raises(ValueError, match=f"model is required.*{provider}"):
             build_launch("codex", "hello", provider=provider, params=PARAMS)
         launch = build_launch(
@@ -236,3 +240,45 @@ def test_claude_sub_accepts_local_login_without_env(monkeypatch):
     assert launch.credentials[0].local_login == "claude /login"
     check_credentials(launch)
     assert "ANTHROPIC_API_KEY" in launch.unset_env
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "https://res.cognitiveservices.azure.com/",
+        "https://res.cognitiveservices.azure.com/openai/v1",
+        "res.cognitiveservices.azure.com",
+    ],
+)
+def test_azure_endpoint_resolves_to_host(endpoint):
+    launch = build_launch(
+        "codex",
+        "hello",
+        provider="azure",
+        model="gpt-5.3-codex",
+        params={"azure_host": endpoint},
+    )
+    assert (
+        "model_providers.azure.base_url=https://res.cognitiveservices.azure.com/openai/v1"
+        in launch.command
+    )
+    assert "model_providers.azure.env_key=AZURE_OPENAI_API_KEY" in launch.command
+    (credential,) = launch.credentials
+    assert credential.binding.hosts == ("res.cognitiveservices.azure.com",)
+    assert credential.binding.header == "Authorization"
+
+
+def test_azure_requires_endpoint():
+    with pytest.raises(ValueError, match="azure_host.*AZURE_OPENAI_ENDPOINT"):
+        build_launch("codex", "hello", provider="azure", model="m", params={})
+
+
+def test_provider_params_reads_every_param(monkeypatch):
+    monkeypatch.setenv("AWS_REGION", "us-east-1")
+    monkeypatch.delenv("CLOUDFLARE_ACCOUNT_ID", raising=False)
+    params = provider_params({"AZURE_OPENAI_ENDPOINT": "https://res.openai.azure.com/"})
+    assert params == {
+        "region": "us-east-1",
+        "account_id": "",
+        "azure_host": "https://res.openai.azure.com/",
+    }

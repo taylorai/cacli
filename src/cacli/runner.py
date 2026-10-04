@@ -37,8 +37,10 @@ def _build_launch(
     adapter = get_harness(harness)
     pair = adapter.pairing(provider)
     catalog = PROVIDERS[pair.provider]
-    supplied = params or {}
+    supplied = dict(params or {})
     for param in catalog.params:
+        if param.normalize and supplied.get(param.name):
+            supplied[param.name] = param.normalize(supplied[param.name])
         if not supplied.get(param.name):
             raise ValueError(
                 f"Missing provider parameter {param.name!r} (environment variable {param.env})"

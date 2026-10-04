@@ -6,7 +6,7 @@ cacli used to call the CLI it runs a "provider". That conflated two things:
   Cursor, Devin). It owns the command line, output parsing, and log format.
 - **Provider**: where inference happens and which account pays for it
   (`claude-sub`, `claude-api`, `openai-sub`, `openai-api`, `bedrock`,
-  `workers-ai`, `cursor`, `devin`). It owns the endpoint, the credential, and
+  `azure`, `workers-ai`, `cursor`, `devin`). It owns the endpoint, the credential, and
   how that credential travels on the wire.
 
 A run is `(harness, provider, model)`. The model is the provider's own model
@@ -27,7 +27,7 @@ is an error that names the supported providers for that harness.
 | Harness | Providers (first is the default) |
 |---|---|
 | claude | claude-sub, claude-api, bedrock |
-| codex | openai-sub, openai-api, bedrock, workers-ai |
+| codex | openai-sub, openai-api, bedrock, azure, workers-ai |
 | pi | workers-ai, claude-api, openai-api |
 | opencode | workers-ai, claude-api, openai-api |
 | cursor | cursor |
@@ -56,9 +56,12 @@ returns a `LaunchSpec`:
 - `credentials`: the secrets the caller must supply, and how each travels on
   the wire (see below). cacli never holds secret values.
 
-`params` are non-secret provider parameters, such as the Bedrock region or the
-Cloudflare account ID. Each has a conventional env var (`AWS_REGION`,
-`CLOUDFLARE_ACCOUNT_ID`). The library takes them explicitly and raises when a
+`params` are non-secret provider parameters, such as the Bedrock region, the
+Cloudflare account ID, or the Azure resource host. Each has a conventional env
+var (`AWS_REGION`, `CLOUDFLARE_ACCOUNT_ID`, `AZURE_OPENAI_ENDPOINT`);
+`provider_params(env)` reads them all. The Azure endpoint may be a bare host or
+the portal URL (`https://<resource>.cognitiveservices.azure.com/`); only the
+host is kept. The library takes them explicitly and raises when a
 required one is missing. The `cacli` CLI reads them from the environment.
 
 ## Credentials and wire bindings
@@ -80,6 +83,7 @@ whose refresh tokens the harness rotates itself.
 | openai-sub | Codex `auth.json` (file) | none: OAuth refresh |
 | openai-api | `OPENAI_API_KEY` | `Authorization: Bearer` on api.openai.com |
 | bedrock | `AWS_BEARER_TOKEN_BEDROCK` | `Authorization: Bearer` on bedrock-runtime.{region}.amazonaws.com |
+| azure | `AZURE_OPENAI_API_KEY` | `Authorization: Bearer` on {azure_host} |
 | workers-ai | `CLOUDFLARE_API_KEY` | `Authorization: Bearer` on api.cloudflare.com, `GET`/`POST`, prefix `/client/v4/accounts/{account_id}/ai/` |
 | cursor | `CURSOR_API_KEY` | none: wire format not documented |
 | devin | Devin config files | none: login files |

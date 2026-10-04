@@ -33,10 +33,11 @@ A run selects a CLI harness, an inference provider, and an unqualified model ID:
 ```bash
 cacli run "Review this diff" --harness claude --provider claude-api --model claude-opus-4-8
 cacli run "Review this diff" --harness pi --provider workers-ai --model @cf/zai-org/glm-5.3
+cacli run "Review this diff" --harness codex --provider azure --model gpt-5.3-codex
 ```
 
-The CLI reads non-secret provider parameters from `AWS_REGION` or
-`CLOUDFLARE_ACCOUNT_ID` and checks required credential names or login files
+The CLI reads non-secret provider parameters from `AWS_REGION`,
+`CLOUDFLARE_ACCOUNT_ID`, or `AZURE_OPENAI_ENDPOINT` and checks required credential names or login files
 before execution. `build_launch()` returns the command, non-secret environment,
 environment variables to unset, and credential wire metadata without reading
 secret values. See [the provider design](docs/harnesses-and-providers.md).

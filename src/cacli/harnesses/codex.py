@@ -52,6 +52,11 @@ class CodexHarness(BaseHarness):
             verified=False,
         ),
         Pairing(
+            "azure",
+            credentials=("AZURE_OPENAI_API_KEY",),
+            requires_model=True,
+        ),
+        Pairing(
             "workers-ai",
             credentials=("CLOUDFLARE_API_KEY",),
             requires_model=True,

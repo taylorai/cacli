@@ -7,7 +7,7 @@ import subprocess
 import time
 
 from cacli.runner import build_launch, build_initial_log_entry
-from cacli.cli import _provider_params
+from cacli.inference import provider_params
 from cacli.runner import check_credentials
 from cacli.sessions import (
     SessionInfo,
@@ -41,7 +41,7 @@ def spawn_agent(args) -> None:
         args.harness,
         args.prompt,
         provider=args.provider,
-        params=_provider_params(),
+        params=provider_params(),
         model=args.model,
         reasoning_effort=getattr(args, "reasoning_effort", None),
         web_search=getattr(args, "web_search", True),

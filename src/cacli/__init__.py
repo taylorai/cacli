@@ -5,7 +5,7 @@ Harness-agnostic interface for running headless coding agents.
 """
 
 from cacli.harnesses import get_harness, list_harnesses
-from cacli.inference import Credential, Param, Provider, WireBinding
+from cacli.inference import Credential, Param, Provider, WireBinding, provider_params
 from cacli.runner import (
     LaunchSpec,
     build_launch,
@@ -20,6 +20,7 @@ from cacli.types import AgentRunResult, ExecResult, ShellExecFn
 __all__ = [
     "run_agent",
     "build_launch",
+    "provider_params",
     "parse_output",
     "build_initial_log_entry",
     "build_pr_description_command",

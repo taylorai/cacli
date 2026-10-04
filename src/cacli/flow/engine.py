@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import time
 from typing import Any, Awaitable, Callable
 
@@ -22,6 +21,7 @@ from cacli.flow.schema import (
     validate_output,
 )
 from cacli.harnesses import get_harness
+from cacli.inference import provider_params
 from cacli.runner import build_launch, check_credentials
 
 
@@ -218,14 +218,7 @@ class FlowEngine:
             prompt,
             provider=provider_name,
             model=model,
-            params={
-                "region": (env or {}).get(
-                    "AWS_REGION", os.environ.get("AWS_REGION", "")
-                ),
-                "account_id": (env or {}).get(
-                    "CLOUDFLARE_ACCOUNT_ID", os.environ.get("CLOUDFLARE_ACCOUNT_ID", "")
-                ),
-            },
+            params=provider_params(env),
         )
         adapter = get_harness(harness_name)
         if self.exec_fn is aexec:
@@ -378,15 +371,7 @@ class FlowEngine:
                                 schema_prompt + FLOW_PROMPT_SUFFIX,
                                 provider=provider_name,
                                 model=model,
-                                params={
-                                    "region": (env or {}).get(
-                                        "AWS_REGION", os.environ.get("AWS_REGION", "")
-                                    ),
-                                    "account_id": (env or {}).get(
-                                        "CLOUDFLARE_ACCOUNT_ID",
-                                        os.environ.get("CLOUDFLARE_ACCOUNT_ID", ""),
-                                    ),
-                                },
+                                params=provider_params(env),
                                 reasoning_effort=effort,
                                 web_search=web_search,
                                 settings=settings,
