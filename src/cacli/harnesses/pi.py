@@ -70,6 +70,8 @@ class PiHarness(BaseHarness):
         sandbox: bool | None = None,
         output_schema: dict | Path | None = None,
         exec_prefix: Sequence[str] = (),
+        extensions: Sequence[str] = (),
+        trust_project: bool = True,
     ) -> str:
         if sandbox:
             raise NotImplementedError(
@@ -79,8 +81,6 @@ class PiHarness(BaseHarness):
         if settings is not None:
             raise ValueError("harness 'pi' does not support a settings argument")
 
-        # cacli runs Pi in externally isolated environments. Trust the project
-        # so Pi loads repository-local instructions, settings, and resources.
         parts = [
             *exec_prefix,
             "pi",
@@ -88,8 +88,12 @@ class PiHarness(BaseHarness):
             "json",
             "--print",
             "--no-session",
-            "--approve",
         ]
+        # cacli runs Pi in externally isolated environments, so by default it
+        # trusts the project and loads repository-local settings and resources.
+        parts.append("--approve" if trust_project else "--no-approve")
+        for extension in extensions:
+            parts.extend(["-e", extension])
         if model:
             parts.extend(["--model", model])
         if reasoning_effort and reasoning_effort != "auto":
@@ -158,6 +162,8 @@ class PiHarness(BaseHarness):
         settings: str | None = None,
         sandbox: bool | None = None,
         exec_prefix: Sequence[str] = (),
+        extensions: Sequence[str] = (),
+        trust_project: bool = True,
     ) -> str:
         return self.build_command(
             prompt=prompt,
@@ -165,6 +171,8 @@ class PiHarness(BaseHarness):
             settings=settings,
             sandbox=sandbox,
             exec_prefix=exec_prefix,
+            extensions=extensions,
+            trust_project=trust_project,
         )
 
     def extract_result_from_json(self, raw_output: str) -> str:

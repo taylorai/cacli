@@ -64,6 +64,14 @@ the portal URL (`https://<resource>.cognitiveservices.azure.com/`); only the
 host is kept. The library takes them explicitly and raises when a
 required one is missing. The `cacli` CLI reads them from the environment.
 
+Pi launches trust project configuration by default and pass `--approve`.
+`extensions=(...)` loads explicit extension paths, emitted as repeatable
+`-e <path>` arguments, and `trust_project=False` passes `--no-approve`. Both
+are available from `build_launch`, `build_pr_description_command`, `run_agent`,
+flow `agent(...)`, and `cacli run`/`cacli spawn` (`--extension`, repeatable,
+and `--no-trust-project`). They are supported only for Pi; other harnesses
+raise `ValueError`.
+
 ## Credentials and wire bindings
 
 Each `Credential` names where the harness reads it (an env var, or a file for

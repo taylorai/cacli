@@ -108,6 +108,8 @@ All arguments after `prompt` are keyword-only.
 | `sandbox` | None | `True` = force OS sandbox, `False` = force off, `None` = harness default (codex/devin default sandboxed; claude/cursor use their own CLI defaults) |
 | `web_search` | True | allow the agent to search the web |
 | `env` | None | extra env vars (dict of str→str) |
+| `extensions` | None | pi only: list of extension paths, each passed as `-e` |
+| `trust_project` | True | pi only: `False` passes `--no-approve`, ignoring project-local `.pi/` settings and extensions |
 
 **Returns `None` on terminal failure** (after retries) — never raises for
 agent failure. Fan-outs degrade instead of exploding; filter with
@@ -207,7 +209,8 @@ the previous run's journal (instant, no re-execution — though replayed costs
 still count against the resumed run's budget), then goes live at the first
 call whose identity differs. Identity includes prompt/harness/provider/model/effort/
 schema/cwd plus the execution options `web_search`, `settings`, `sandbox`,
-`env`, `retries`, `schema_retries`, `timeout`, and `stall_timeout`. `label` and
+`env`, `retries`, `schema_retries`, `timeout`, and `stall_timeout` (and pi's
+`extensions`/`trust_project` when set). `label` and
 `phase` are display-only and deliberately excluded from resume identity.
 Resuming with an edited script or different `--args` is the intended
 iteration workflow: fix a later stage, keep earlier results cached. Cached

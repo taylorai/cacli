@@ -120,6 +120,8 @@ class FlowHost:
         settings: Any = None,
         sandbox: Any = None,
         env: Any = None,
+        extensions: Any = None,
+        trust_project: Any = True,
     ) -> Any | None:
         if self.engine.cancel_event.is_set():
             raise RuntimeError("FlowCancelled: workflow cancelled")
@@ -184,6 +186,18 @@ class FlowHost:
             raise TypeError("web_search must be a boolean")
         if sandbox is not None and not isinstance(sandbox, bool):
             raise TypeError("sandbox must be a boolean or null")
+        if extensions is None:
+            extensions = []
+        if not isinstance(extensions, list) or not all(
+            isinstance(extension, str) and extension for extension in extensions
+        ):
+            raise TypeError("extensions must be a list of non-empty strings")
+        if len(extensions) > 20 or any(
+            len(extension) > 4096 for extension in extensions
+        ):
+            raise ValueError("extensions has too many or too long entries")
+        if not isinstance(trust_project, bool):
+            raise TypeError("trust_project must be a boolean")
         if env is not None:
             if not isinstance(env, dict) or not all(
                 isinstance(key, str) and isinstance(value, str)
@@ -222,4 +236,6 @@ class FlowHost:
             settings=settings,
             sandbox=sandbox,
             env=env,
+            extensions=tuple(extensions),
+            trust_project=trust_project,
         )

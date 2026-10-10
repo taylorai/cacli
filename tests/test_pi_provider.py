@@ -78,6 +78,48 @@ def test_build_command_omits_optional_model_and_auto_thinking():
     assert "--thinking" not in parts
 
 
+def test_build_command_loads_extensions_in_order_and_can_disable_project_trust():
+    command = PiHarness().build_command(
+        "hello",
+        extensions=("/tmp/first extension.ts", "/tmp/second.ts"),
+        trust_project=False,
+    )
+    parts = shlex.split(command)
+
+    assert parts[parts.index("--no-approve")] == "--no-approve"
+    assert "--approve" not in parts
+    assert parts[parts.index("--no-approve") + 1 :] == [
+        "-e",
+        "/tmp/first extension.ts",
+        "-e",
+        "/tmp/second.ts",
+    ]
+
+
+def test_build_command_defaults_match_approved_command():
+    assert PiHarness().build_command("hello") == (
+        "printf '%s' hello | pi --mode json --print --no-session --approve"
+    )
+
+
+def test_pr_description_command_honors_extensions_and_project_trust():
+    from cacli import build_pr_description_command
+
+    command = build_pr_description_command(
+        "pi",
+        "hello",
+        params={"account_id": "account"},
+        extensions=("/tmp/guardian extension.ts", "/tmp/other.ts"),
+        trust_project=False,
+    )
+    parts = shlex.split(command)
+
+    assert "--no-approve" in parts
+    assert "--approve" not in parts
+    assert parts[parts.index("-e") + 1] == "/tmp/guardian extension.ts"
+    assert parts[parts.index("-e", parts.index("-e") + 1) + 1] == "/tmp/other.ts"
+
+
 def test_build_command_rejects_internal_sandbox_and_settings():
     provider = PiHarness()
 

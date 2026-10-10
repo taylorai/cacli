@@ -3,8 +3,10 @@
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Sequence
 
 from cacli.harnesses import get_harness
+from cacli.harnesses.pi import PiHarness
 from cacli.inference import Credential, PROVIDERS
 from cacli.types import AgentRunResult, ExecResult, ShellExecFn
 
@@ -33,8 +35,14 @@ def _build_launch(
     sandbox: bool | None = None,
     output_schema: dict | Path | None = None,
     pr_description: bool = False,
+    extensions: Sequence[str] = (),
+    trust_project: bool = True,
 ) -> LaunchSpec:
     adapter = get_harness(harness)
+    if not isinstance(adapter, PiHarness) and (extensions or not trust_project):
+        raise ValueError(
+            "extensions and trust_project options are supported only by the 'pi' harness"
+        )
     pair = adapter.pairing(provider)
     catalog = PROVIDERS[pair.provider]
     supplied = dict(params or {})
@@ -60,6 +68,12 @@ def _build_launch(
         prefix_parts.extend(["-u", key])
     prefix_parts.extend(f"{key}={value}" for key, value in env.items())
     exec_prefix = prefix_parts if len(prefix_parts) > 1 else []
+    # Only Pi takes extension and project-trust options; others were rejected above.
+    pi_options = (
+        {"extensions": extensions, "trust_project": trust_project}
+        if isinstance(adapter, PiHarness)
+        else {}
+    )
     if pr_description:
         command = adapter.build_pr_description_command(
             prompt,
@@ -67,6 +81,7 @@ def _build_launch(
             settings=settings,
             sandbox=sandbox,
             exec_prefix=exec_prefix,
+            **pi_options,
         )
     else:
         command = adapter.build_command(
@@ -78,6 +93,7 @@ def _build_launch(
             sandbox=sandbox,
             output_schema=output_schema,
             exec_prefix=exec_prefix,
+            **pi_options,
         )
     command = adapter.configure_command(pair, command, supplied)
     credentials = tuple(
@@ -108,6 +124,8 @@ def build_launch(
     settings: str | None = None,
     sandbox: bool | None = None,
     output_schema: dict | Path | None = None,
+    extensions: Sequence[str] = (),
+    trust_project: bool = True,
 ) -> LaunchSpec:
     return _build_launch(
         harness,
@@ -120,6 +138,8 @@ def build_launch(
         settings=settings,
         sandbox=sandbox,
         output_schema=output_schema,
+        extensions=extensions,
+        trust_project=trust_project,
     )
 
 
@@ -132,6 +152,8 @@ def build_pr_description_command(
     params: dict[str, str] | None = None,
     settings: str | None = None,
     sandbox: bool | None = None,
+    extensions: Sequence[str] = (),
+    trust_project: bool = True,
 ) -> str:
     """Build a PR description invocation with the same provider selection."""
     launch = _build_launch(
@@ -142,6 +164,8 @@ def build_pr_description_command(
         params=params,
         settings=settings,
         sandbox=sandbox,
+        extensions=extensions,
+        trust_project=trust_project,
         pr_description=True,
     )
     return launch.command
@@ -184,6 +208,8 @@ def run_agent(
     cwd: str = ".",
     timeout: int = 3600,
     env: dict[str, str] | None = None,
+    extensions: Sequence[str] = (),
+    trust_project: bool = True,
 ) -> AgentRunResult:
     launch = build_launch(
         harness,
@@ -196,6 +222,8 @@ def run_agent(
         settings=settings,
         sandbox=sandbox,
         output_schema=output_schema,
+        extensions=extensions,
+        trust_project=trust_project,
     )
     exec_result: ExecResult = exec_fn(launch.command, cwd, timeout, env)
     result = get_harness(harness).parse_output(exec_result.stdout)

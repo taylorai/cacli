@@ -690,3 +690,44 @@ def test_flow_journal_records_harness_and_provider(tmp_path, fake_provider):
         entry["harness"] == "fake" and entry["provider"] == "openai-api"
         for entry in entries
     )
+
+
+def test_pi_flow_agent_passes_extensions_and_project_trust(tmp_path):
+    commands = []
+
+    async def pi_exec(command, *args, **kwargs):
+        commands.append(command)
+        message = {
+            "role": "assistant",
+            "content": [{"type": "text", "text": "done"}],
+            "stopReason": "stop",
+        }
+        return AsyncExecResult(
+            0, json.dumps({"type": "message_end", "message": message})
+        )
+
+    source = (
+        "async def main():\n"
+        '    return await agent("test", harness="pi", provider="claude-api",\n'
+        '        extensions=["/opt/guardian.ts"], trust_project=False)\n'
+    )
+    outcome = run(
+        run_flow(
+            write_flow(tmp_path, source),
+            runs_root=tmp_path / "runs",
+            engine_options={"exec_fn": pi_exec},
+        )
+    )
+    assert outcome.result == "done"
+    parts = shlex.split(commands[0])
+    assert "--no-approve" in parts and "--approve" not in parts
+    assert parts[parts.index("-e") + 1] == "/opt/guardian.ts"
+
+
+def test_flow_agent_rejects_invalid_extensions(tmp_path):
+    source = (
+        "async def main():\n"
+        '    return await agent("test", harness="pi", extensions="/opt/guardian.ts")\n'
+    )
+    with pytest.raises(Exception, match="extensions must be a list"):
+        run(run_flow(write_flow(tmp_path, source), runs_root=tmp_path / "runs"))

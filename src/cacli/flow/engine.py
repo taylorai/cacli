@@ -210,6 +210,8 @@ class FlowEngine:
         settings: str | None,
         sandbox: bool | None,
         env: dict[str, str] | None,
+        extensions: tuple[str, ...] = (),
+        trust_project: bool = True,
     ) -> Any | None:
         if self.cancel_event.is_set():
             raise RuntimeError("FlowCancelled: workflow cancelled")
@@ -219,14 +221,24 @@ class FlowEngine:
             provider=provider_name,
             model=model,
             params=provider_params(env),
+            extensions=extensions,
+            trust_project=trust_project,
         )
         adapter = get_harness(harness_name)
         if self.exec_fn is aexec:
             check_credentials(launch, env)
         provider_name = launch.provider
         resolved_model = launch.model
+        # Pi-only options join the identity only when set, so resume keys of
+        # runs recorded before these options existed stay valid.
+        pi_options: dict[str, Any] = {}
+        if extensions:
+            pi_options["extensions"] = list(extensions)
+        if not trust_project:
+            pi_options["trust_project"] = False
         index, key, cached, respawning = await self._assign_call(
             {
+                **pi_options,
                 "prompt": prompt,
                 "harness": harness_name,
                 "provider": provider_name,
@@ -377,6 +389,8 @@ class FlowEngine:
                                 settings=settings,
                                 sandbox=sandbox,
                                 output_schema=output_schema,
+                                extensions=extensions,
+                                trust_project=trust_project,
                             )
                             exec_result = await self.exec_fn(
                                 attempt_launch.command,

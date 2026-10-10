@@ -105,6 +105,20 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
             "restores unsandboxed execution."
         ),
     )
+    parser.add_argument(
+        "--extension",
+        dest="extensions",
+        action="append",
+        default=[],
+        help="Pi extension path, passed as -e (repeatable; pi only)",
+    )
+    parser.add_argument(
+        "--no-trust-project",
+        dest="trust_project",
+        action="store_false",
+        default=True,
+        help="Ignore project-local Pi settings and extensions (--no-approve; pi only)",
+    )
     parser.add_argument("--cwd", default=".", help="Working directory")
     parser.add_argument(
         "--timeout", "-t", type=int, default=3600, help="Timeout in seconds"
@@ -123,6 +137,8 @@ def _run_command(args) -> None:
         web_search=args.web_search,
         settings=args.settings,
         sandbox=args.sandbox,
+        extensions=args.extensions,
+        trust_project=args.trust_project,
     )
     if args.command_only:
         print(launch.command)
@@ -142,6 +158,8 @@ def _run_command(args) -> None:
         sandbox=args.sandbox,
         cwd=args.cwd,
         timeout=args.timeout,
+        extensions=args.extensions,
+        trust_project=args.trust_project,
     )
 
     if args.raw:

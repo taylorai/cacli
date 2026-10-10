@@ -1,12 +1,13 @@
 """Harness/provider pairings and non-secret launch plans."""
 
 import shlex
+import sys
 from dataclasses import asdict
 
 import pytest
 
-from cacli import build_launch, get_harness, list_harnesses
-from cacli.cli import check_credentials
+from cacli import ExecResult, build_launch, get_harness, list_harnesses, run_agent
+from cacli.cli import check_credentials, main
 from cacli.inference import PROVIDERS, provider_params
 
 
@@ -153,6 +154,24 @@ def test_pr_description_uses_pairing_and_env_prefix():
     assert "model_providers.openai_api.wire_api=responses" in codex
 
 
+def test_pi_launch_options_and_non_pi_rejection():
+    from cacli import build_launch
+
+    launch = build_launch(
+        "pi",
+        "hello",
+        params={"account_id": "account"},
+        extensions=("/tmp/guardian extension.ts", "/tmp/extra.ts"),
+        trust_project=False,
+    )
+    assert "--no-approve -e '" in launch.command
+    assert "-e '/tmp/guardian extension.ts' -e /tmp/extra.ts" in launch.command
+    with pytest.raises(ValueError, match="supported only by the 'pi' harness"):
+        build_launch("codex", "hello", extensions=("extension.ts",))
+    with pytest.raises(ValueError, match="supported only by the 'pi' harness"):
+        build_launch("codex", "hello", trust_project=False)
+
+
 def test_cli_rejects_missing_credential_without_printing_value(monkeypatch, capsys):
     import sys
     from cacli.cli import main
@@ -282,3 +301,47 @@ def test_provider_params_reads_every_param(monkeypatch):
         "account_id": "",
         "azure_host": "https://res.openai.azure.com/",
     }
+
+
+def test_cli_and_run_agent_pass_pi_launch_options(monkeypatch, capsys):
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "account")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "cacli",
+            "run",
+            "hello",
+            "--harness",
+            "pi",
+            "--extension",
+            "/opt/a.ts",
+            "--extension",
+            "/opt/b.ts",
+            "--no-trust-project",
+            "--command-only",
+        ],
+    )
+    main()
+    parts = shlex.split(capsys.readouterr().out)
+    assert "--no-approve" in parts and "--approve" not in parts
+    assert [parts[i + 1] for i, part in enumerate(parts) if part == "-e"] == [
+        "/opt/a.ts",
+        "/opt/b.ts",
+    ]
+
+    seen = []
+
+    def fake_exec(command, cwd, timeout, env):
+        seen.append(command)
+        return ExecResult(0, "", "")
+
+    run_agent(
+        "pi",
+        "hello",
+        fake_exec,
+        params={"account_id": "account"},
+        extensions=("/opt/a.ts",),
+        trust_project=False,
+    )
+    assert "--no-approve -e /opt/a.ts" in seen[0]

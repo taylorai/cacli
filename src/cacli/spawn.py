@@ -47,6 +47,8 @@ def spawn_agent(args) -> None:
         web_search=getattr(args, "web_search", True),
         settings=getattr(args, "settings", None),
         sandbox=getattr(args, "sandbox", None),
+        extensions=getattr(args, "extensions", ()),
+        trust_project=getattr(args, "trust_project", True),
     )
 
     check_credentials(launch)
